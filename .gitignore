@@ -1,0 +1,5 @@
+user_data/ 
+*.pyc 
+__pycache__/ 
+bot_log.txt 
+user_data/  *.pyc  __pycache__/  bot_log.txt 

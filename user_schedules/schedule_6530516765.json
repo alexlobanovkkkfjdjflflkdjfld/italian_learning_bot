@@ -1,0 +1,141 @@
+{
+  "user_id": 6530516765,
+  "words": [
+    {
+      "word": "lavorare",
+      "translation": "работать",
+      "next_review": "2024-11-20T17:55:43.689782",
+      "current_interval": 8,
+      "repetitions": 1,
+      "correct_answers": 1
+    },
+    {
+      "word": "un lavoro",
+      "translation": "работа",
+      "next_review": "2024-11-20T14:17:30.470216",
+      "current_interval": 24,
+      "repetitions": 2
+    },
+    {
+      "word": "una azienda",
+      "translation": "компания",
+      "next_review": "2024-11-20T14:17:47.225657",
+      "current_interval": 24,
+      "repetitions": 2
+    },
+    {
+      "word": "un ufficio",
+      "translation": "офис",
+      "next_review": "2024-11-20T18:04:13.332765",
+      "current_interval": 8,
+      "repetitions": 1,
+      "correct_answers": 1
+    },
+    {
+      "word": "un collega",
+      "translation": "коллега",
+      "next_review": "2024-11-20T18:05:24.058684",
+      "current_interval": 8,
+      "repetitions": 1,
+      "correct_answers": 1
+    },
+    {
+      "word": "un direttore",
+      "translation": "директор",
+      "next_review": "2024-11-20T14:18:51.021597",
+      "current_interval": 24,
+      "repetitions": 2
+    },
+    {
+      "word": "un progetto",
+      "translation": "проект",
+      "next_review": "2024-11-20T14:19:17.495657",
+      "current_interval": 24,
+      "repetitions": 2
+    },
+    {
+      "word": "una riunione",
+      "translation": "встреча",
+      "next_review": "2024-11-20T14:19:53.781504",
+      "current_interval": 24,
+      "repetitions": 2
+    },
+    {
+      "word": "parlare",
+      "translation": "говорить",
+      "next_review": "2024-11-19T22:20:09.827430",
+      "current_interval": 8,
+      "repetitions": 1
+    },
+    {
+      "word": "un impiegato",
+      "translation": "сотрудник",
+      "next_review": "2024-11-19T22:16:01.000522",
+      "current_interval": 4,
+      "repetitions": 1
+    },
+    {
+      "word": "essere puntuale",
+      "translation": "быть пунктуальным",
+      "next_review": "2024-11-19T22:23:32.012143",
+      "current_interval": 8,
+      "repetitions": 1
+    },
+    {
+      "word": "iniziare a lavorare",
+      "translation": "начинать работать",
+      "next_review": "2024-11-19T19:35:41.681121",
+      "current_interval": 4,
+      "repetitions": 1
+    },
+    {
+      "word": "finire di lavorare",
+      "translation": "заканчивать работать",
+      "next_review": "2024-11-19T22:28:07.278155",
+      "current_interval": 8,
+      "repetitions": 1
+    },
+    {
+      "word": "andare al lavoro",
+      "translation": "идти на работу",
+      "next_review": "2024-11-19T22:54:30.338244",
+      "current_interval": 8,
+      "repetitions": 1
+    },
+    {
+      "word": "essere competente",
+      "translation": "быть компетентным",
+      "next_review": "2024-11-19T22:54:54.504613",
+      "current_interval": 8,
+      "repetitions": 1
+    },
+    {
+      "word": "avere un meeting",
+      "translation": "иметь встречу",
+      "next_review": "2024-11-19T22:57:06.262236",
+      "current_interval": 8,
+      "repetitions": 1
+    },
+    {
+      "word": "fare straordinari",
+      "translation": "работать сверхурочно",
+      "next_review": "2024-11-19T22:16:41.126737",
+      "current_interval": 4,
+      "repetitions": 1
+    },
+    {
+      "word": "avere responsabilità",
+      "translation": "иметь ответственность",
+      "next_review": "2024-11-19T22:18:29.748720",
+      "current_interval": 4,
+      "repetitions": 1
+    },
+    {
+      "word": "essere motivato",
+      "translation": "быть мотивированным",
+      "next_review": "2024-11-19T22:58:40.369694",
+      "current_interval": 8,
+      "repetitions": 1
+    }
+  ]
+}
