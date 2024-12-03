@@ -1443,7 +1443,7 @@ def keep_alive():
    """Автопробуждение бота"""
    while True:
        try:
-           requests.get("https://ваш-url-на-render.com")
+           requests.get("https://italian-learning-bot.onrender.com")
            logger.info("Keep alive ping sent")
        except Exception as e:
            logger.error(f"Keep alive error: {e}")
