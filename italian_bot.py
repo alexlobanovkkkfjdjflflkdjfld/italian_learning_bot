@@ -1438,12 +1438,27 @@ def check_and_send_notifications():
         time.sleep(600)  # Проверяем каждую минуту
 
 
+# Добавьте перед функцией run_bot():
+def keep_alive():
+   """Автопробуждение бота"""
+   while True:
+       try:
+           requests.get("https://ваш-url-на-render.com")
+           logger.info("Keep alive ping sent")
+       except Exception as e:
+           logger.error(f"Keep alive error: {e}")
+       time.sleep(10*60)  # пинг каждые 10 минут
+
+
         
 def run_bot():
    """Запуск бота"""
    logger.info("=== Starting Bot ===")
+   keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
+   keep_alive_thread.start()
    logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
    
+
    def check_connection():
        """Проверка соединения с Telegram API"""
        try:
