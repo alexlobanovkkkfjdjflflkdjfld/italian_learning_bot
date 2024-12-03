@@ -189,7 +189,7 @@ def create_initial_user_data(user_id: int) -> dict:
     
     # Берем первые 20 слов для изучения
     initial_words = []
-    for word in all_words[:20]:
+    for word in all_words[:5]:
         word_data = VOCABULARY["Буду изучать"][word]
         initial_words.append(create_word_data(word, word_data["перевод"]))
     
@@ -780,17 +780,17 @@ def next_exercise(message):
     
     try:
         user_data = load_user_data(user_id)
-        
-        # Проверяем, есть ли ещё слова в текущей сессии
         current_session = user_data.get("current_session", [])
         current_index = user_data.get("current_word_index", 0)
         
         if not current_session or current_index >= len(current_session) - 1:
-            # Проверяем есть ли новые слова для повторения
             words_to_review = get_words_for_review(user_data)
             
             if not words_to_review:
-                # Находим время следующего повторения
+                user_data["current_session"] = []
+                user_data["current_word_index"] = 0
+                save_user_data(user_id, user_data)
+                
                 next_review = None
                 for word in user_data["active_words"]:
                     try:
@@ -802,44 +802,52 @@ def next_exercise(message):
 
                 if next_review:
                     time_diff = next_review - datetime.datetime.now()
+                    time_str = ""
                     if time_diff.total_seconds() > 0:
                         hours = int(time_diff.total_seconds() // 3600)
                         minutes = int((time_diff.total_seconds() % 3600) // 60)
-                        time_str = f"{hours}ч {minutes}мин" if hours > 0 else f"{minutes}мин"
-                        bot.reply_to(
-                            message,
-                            f"✅ Все задания на текущий момент выполнены!\n\n"
-                            f"⏰ Следующее повторение через: *{time_str}*\n\n"
-                            "🔔 Я пришлю уведомление, когда придет время повторить задания!",
-                            parse_mode='Markdown',
-                            reply_markup=get_main_keyboard()
-                        )
-                    else:
-                        bot.reply_to(
-                            message,
-                            "✅ Все задания на текущий момент выполнены!\n"
-                            "Возвращайтесь позже для новых заданий.",
-                            reply_markup=get_main_keyboard()
-                        )
-                else:
-                    bot.reply_to(
-                        message,
-                        "✅ Поздравляем! Все доступные задания выполнены!",
-                        reply_markup=get_main_keyboard()
-                    )
+                        time_str = f"\n⏰ Следующее повторение через: *{hours}ч {minutes}мин*"
+                
+                bot.reply_to(
+                    message,
+                    f"✅ Все слова повторены!{time_str}\n\n🔔 Я пришлю уведомление, когда придет время для повторения.",
+                    parse_mode='Markdown',
+                    reply_markup=get_main_keyboard()
+                )
                 return
-               
-            # Начинаем новую сессию
-            random.shuffle(words_to_review)
-            user_data["current_session"] = words_to_review
+            
+            # Если есть слова для повторения
+            current_words = []
+            future_words = []
+            
+            # Разделяем на текущие и будущие
+            current_time = datetime.datetime.now()
+            for word in words_to_review:
+                review_time = datetime.datetime.fromisoformat(word["next_review"])
+                if review_time <= current_time:
+                    current_words.append(word)
+                else:
+                    future_words.append(word)
+            
+            # Сортируем текущие по времени (самые старые первые)
+            current_words.sort(key=lambda x: x["next_review"])
+            random.shuffle(future_words)
+            
+            # Обновляем сессию
+            user_data["current_session"] = current_words + future_words
             user_data["current_word_index"] = 0
+            
+            if current_words:
+                bot.reply_to(
+                    message,
+                    f"📚 Начинаем повторение!\n❗️ Есть {len(current_words)} просроченных слов, начнем с них.",
+                    reply_markup=get_exercise_keyboard()
+                )
         else:
-            # Переходим к следующему слову
             user_data["current_word_index"] += 1
         
         save_user_data(user_id, user_data)
         
-        # Обновляем состояние
         state = user_states.get(user_id, {})
         state["awaiting_answer"] = True
         user_states[user_id] = state
