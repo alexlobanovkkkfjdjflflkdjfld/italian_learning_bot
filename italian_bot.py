@@ -1387,10 +1387,10 @@ def check_and_send_notifications():
         
 def ensure_single_instance():
     import socket
+    global _lock_socket  # Добавляем глобальную переменную
+    _lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        # Try to bind to a port - will fail if already bound
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind(('localhost', 12345))
+        _lock_socket.bind(('localhost', 12345))
         return True
     except socket.error:
         return False
@@ -1442,17 +1442,27 @@ def run_bot():
             logger.error(f"Fatal error: {e}")
             time.sleep(600)
 
+
+def cleanup():
+    global _lock_socket
+    if '_lock_socket' in globals():
+        _lock_socket.close()
+
+# В main добавить:
 if __name__ == "__main__":
     try:
         import signal
         def signal_handler(sig, frame):
             logger.info("Received stop signal, shutting down...")
+            cleanup()  # Добавить очистку
             os._exit(0)
         signal.signal(signal.SIGINT, signal_handler)
         
         run_bot()
     except KeyboardInterrupt:
+        cleanup()  # И здесь тоже
         logger.info("Bot stopped by user")
     except Exception as e:
+        cleanup()  # И здесь
         logger.error(f"Fatal error: {e}")
         raise
