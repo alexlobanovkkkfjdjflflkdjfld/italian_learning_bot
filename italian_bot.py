@@ -34,7 +34,7 @@ telebot_logger.setLevel(logging.WARNING)
 
 # Конфигурация
 TOKEN = "7312843542:AAHVDxaHYSveOpitmkWagTFoMVNzYF4_tMU"
-bot = telebot.TeleBot(TOKEN, threaded=True)  # Включаем многопоточность
+bot = telebot.TeleBot(TOKEN, parse_mode=None)
 
 # Глобальное хранилище состояний пользователей
 user_states = {}
@@ -134,7 +134,6 @@ def test_notification(message):
         user_states[user_id] = {
             "translation_direction": "ru_to_it",
             "awaiting_answer": False,
-            "next_notification": next_notification.isoformat(),
             "last_activity": datetime.datetime.now().isoformat()
         }
         
@@ -468,9 +467,8 @@ def show_current_exercise(chat_id: int, user_id: int):
         
         # Сохраняем состояние
         user_states[user_id] = {
-            "translation_direction": translation_direction,
-            "awaiting_answer": True,
-            "current_example": example,
+            "translation_direction": "ru_to_it",
+            "awaiting_answer": False,
             "last_activity": datetime.datetime.now().isoformat()
         }
         
@@ -518,11 +516,10 @@ def send_welcome(message):
        
        # Инициализируем состояние
        user_states[user_id] = {
-           "translation_direction": "ru_to_it",
-           "awaiting_answer": False,
-           "current_example": None,
-           "last_activity": datetime.datetime.now().isoformat()
-       }
+            "translation_direction": "ru_to_it",
+            "awaiting_answer": False,
+            "last_activity": datetime.datetime.now().isoformat()
+        }
        
        welcome_text = (
            "*Привет, Сашуля-красотуля! *\n\n"
@@ -564,11 +561,10 @@ def handle_reset(message):
        
        # Сбрасываем состояние
        user_states[user_id] = {
-           "translation_direction": "ru_to_it",
-           "awaiting_answer": False,
-           "current_example": None,
-           "last_activity": datetime.datetime.now().isoformat()
-       }
+            "translation_direction": "ru_to_it",
+            "awaiting_answer": False,
+            "last_activity": datetime.datetime.now().isoformat()
+        }
        
        bot.reply_to(
            message,
@@ -634,8 +630,7 @@ def start_review(message):
         # Обновляем состояние
         user_states[user_id] = {
             "translation_direction": "ru_to_it",
-            "awaiting_answer": True,
-            "current_example": None,
+            "awaiting_answer": False,
             "last_activity": datetime.datetime.now().isoformat()
         }
         
@@ -711,11 +706,10 @@ def switch_translation_direction(message):
        current_example = state.get("current_example")
        
        user_states[user_id] = {
-           "translation_direction": new_direction,
-           "awaiting_answer": awaiting_answer,
-           "current_example": current_example,
-           "last_activity": datetime.datetime.now().isoformat()
-       }
+            "translation_direction": "ru_to_it",
+            "awaiting_answer": False,
+            "last_activity": datetime.datetime.now().isoformat()
+        }
        
        direction_text = "итальянский → русский" if new_direction == "it_to_ru" else "русский → итальянский"
        bot.reply_to(
@@ -935,18 +929,18 @@ def end_session(message):
                 time_str = f"{hours}ч {minutes}мин" if hours > 0 else f"{minutes}мин"
                 
                 # Устанавливаем напоминание через час если занятие прервано
-                reminder_time = min(
-                    current_time + datetime.timedelta(hours=1),
-                    next_review
-                )
+                # reminder_time = min(
+                    # current_time + datetime.timedelta(hours=1),
+                    # next_review
+                # )
                 
                 # Сохраняем время следующего уведомления
-                user_states[user_id] = {
-                    "translation_direction": "ru_to_it",
-                    "awaiting_answer": False,
-                    "next_notification": reminder_time.isoformat(),
-                    "last_activity": current_time.isoformat()
-                }
+                # user_states[user_id] = {
+                    # "translation_direction": "ru_to_it",
+                    # "awaiting_answer": False,
+                    # "next_notification": reminder_time.isoformat(),
+                    # "last_activity": current_time.isoformat()
+                # }
                 
                 # Добавляем информацию о следующих повторениях
                 summary_text.extend([
@@ -1247,17 +1241,17 @@ def check_status(message):
         status_text = ["📊 *Текущий статус обучения:*\n"]
         
         # Проверяем следующее уведомление
-        next_notification = state.get("next_notification")
-        if next_notification:
-            notification_time = datetime.datetime.fromisoformat(next_notification)
-            time_diff = notification_time - current_time
-            if time_diff.total_seconds() > 0:
-                hours = int(time_diff.total_seconds() // 3600)
-                minutes = int((time_diff.total_seconds() % 3600) // 60)
-                time_str = f"{hours}ч {minutes}мин" if hours > 0 else f"{minutes}мин"
-                status_text.append(f"🔔 Следующее уведомление через: *{time_str}*")
-        else:
-            status_text.append("🔕 Нет запланированных уведомлений")
+        # next_notification = state.get("next_notification")
+        # if next_notification:
+            # notification_time = datetime.datetime.fromisoformat(next_notification)
+            # time_diff = notification_time - current_time
+            # if time_diff.total_seconds() > 0:
+                # hours = int(time_diff.total_seconds() // 3600)
+                # minutes = int((time_diff.total_seconds() % 3600) // 60)
+                # time_str = f"{hours}ч {minutes}мин" if hours > 0 else f"{minutes}мин"
+                # status_text.append(f"🔔 Следующее уведомление через: *{time_str}*")
+        # else:
+            # status_text.append("🔕 Нет запланированных уведомлений")
         
         # Проверяем слова для повторения
         # В функции check_status добавьте группировку по интервалам:
@@ -1308,85 +1302,85 @@ def check_status(message):
             reply_markup=get_main_keyboard()
         )
 
-@bot.message_handler(commands=['test_notify'])
-def test_notification(message):
-    """Временная команда для тестирования уведомлений"""
-    user_id = message.from_user.id
-    try:
-        # Устанавливаем тестовое уведомление через 1 минуту
-        next_notification = datetime.datetime.now() + datetime.timedelta(minutes=1)
-        user_states[user_id] = {
-            "translation_direction": "ru_to_it",
-            "awaiting_answer": False,
-            "next_notification": next_notification.isoformat(),
-            "last_activity": datetime.datetime.now().isoformat()
-        }
+# @bot.message_handler(commands=['test_notify'])
+# def test_notification(message):
+    # """Временная команда для тестирования уведомлений"""
+    # user_id = message.from_user.id
+    # try:
+        # # Устанавливаем тестовое уведомление через 1 минуту
+        # next_notification = datetime.datetime.now() + datetime.timedelta(minutes=1)
+        # user_states[user_id] = {
+            # "translation_direction": "ru_to_it",
+            # "awaiting_answer": False,
+            # "next_notification": next_notification.isoformat(),
+            # "last_activity": datetime.datetime.now().isoformat()
+        # }
         
-        bot.reply_to(
-            message,
-            "🔔 Тестовое уведомление будет отправлено через 1 минуту",
-            reply_markup=get_main_keyboard()
-        )
+        # bot.reply_to(
+            # message,
+            # "🔔 Тестовое уведомление будет отправлено через 1 минуту",
+            # reply_markup=get_main_keyboard()
+        # )
         
-    except Exception as e:
-        logger.error(f"Error setting test notification: {e}")
-        bot.reply_to(
-            message,
-            "❌ Ошибка при установке тестового уведомления",
-            reply_markup=get_main_keyboard()
-        )
+    # except Exception as e:
+        # logger.error(f"Error setting test notification: {e}")
+        # bot.reply_to(
+            # message,
+            # "❌ Ошибка при установке тестового уведомления",
+            # reply_markup=get_main_keyboard()
+        # )
 
         
-def check_and_send_notifications():
-   while True:
-       try:
-           current_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=6)))
+# def check_and_send_notifications():
+   # while True:
+       # try:
+           # current_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=6)))
            
-           if not os.path.exists('user_data'):
-               continue
+           # if not os.path.exists('user_data'):
+               # continue
 
-           for filename in os.listdir('user_data'):
-               try:
-                   user_id = int(filename.split('_')[1].split('.')[0])
-                   user_data = load_user_data(user_id)
-                   words_to_review = []
+           # for filename in os.listdir('user_data'):
+               # try:
+                   # user_id = int(filename.split('_')[1].split('.')[0])
+                   # user_data = load_user_data(user_id)
+                   # words_to_review = []
                    
-                   for word in user_data["active_words"]:
-                       try:
-                           review_time = datetime.datetime.fromisoformat(word["next_review"])
-                           review_time = review_time.replace(tzinfo=datetime.timezone(datetime.timedelta(hours=6)))
+                   # for word in user_data["active_words"]:
+                       # try:
+                           # review_time = datetime.datetime.fromisoformat(word["next_review"])
+                           # review_time = review_time.replace(tzinfo=datetime.timezone(datetime.timedelta(hours=6)))
                            
-                           if review_time <= current_time:
-                               words_to_review.append(word)
-                       except Exception as e:
-                           logger.error(f"Error processing word: {e}")
-                           continue
+                           # if review_time <= current_time:
+                               # words_to_review.append(word)
+                       # except Exception as e:
+                           # logger.error(f"Error processing word: {e}")
+                           # continue
 
-                   if words_to_review:
-                       notification_text = "🔔 Пора повторить слова!\n\n"
-                       notification_text += f"У вас {len(words_to_review)} слов готово к повторению:\n\n"
+                   # if words_to_review:
+                       # notification_text = "🔔 Пора повторить слова!\n\n"
+                       # notification_text += f"У вас {len(words_to_review)} слов готово к повторению:\n\n"
                        
-                       for word in words_to_review[:3]:
-                           notification_text += f"• {word['word']} - {word['translation']}\n"
+                       # for word in words_to_review[:3]:
+                           # notification_text += f"• {word['word']} - {word['translation']}\n"
                        
-                       try:
-                           bot.send_message(
-                               user_id, 
-                               notification_text, 
-                               reply_markup=get_main_keyboard()
-                           )
-                           logger.info(f"Sent notification to user {user_id}")
-                       except Exception as e:
-                           logger.error(f"Failed to send notification: {e}")
+                       # try:
+                           # bot.send_message(
+                               # user_id, 
+                               # notification_text, 
+                               # reply_markup=get_main_keyboard()
+                           # )
+                           # logger.info(f"Sent notification to user {user_id}")
+                       # except Exception as e:
+                           # logger.error(f"Failed to send notification: {e}")
                            
-               except Exception as e:
-                   logger.error(f"Error processing user file: {e}")
-                   continue
+               # except Exception as e:
+                   # logger.error(f"Error processing user file: {e}")
+                   # continue
                    
-       except Exception as e:
-           logger.error(f"Error in notification check: {e}")
+       # except Exception as e:
+           # logger.error(f"Error in notification check: {e}")
            
-       time.sleep(600)
+       # time.sleep(600)
 
 
 
@@ -1402,29 +1396,12 @@ def ensure_single_instance():
         return False
 
 def run_bot():
-   logger.info("=== Starting Bot ===")
-   logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
-
-   try:
-       notification_thread = threading.Thread(
-           target=check_and_send_notifications, 
-           daemon=True
-       )
-       notification_thread.start()
-       logger.info("Notification thread started")
-       
-       bot.remove_webhook()
-       bot.delete_webhook()
-       
-       bot.polling(
-           non_stop=True,
-           interval=1,
-           timeout=20
-       )
-       
-   except Exception as e:
-       logger.error(f"Bot error: {e}")
-       sys.exit(1)
+    logger.info("=== Starting Bot ===")
+    logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
+    
+    bot.remove_webhook()
+    time.sleep(2)
+    bot.polling()
 
 def cleanup():
    global _lock_socket
@@ -1432,21 +1409,4 @@ def cleanup():
        _lock_socket.close()
 
 if __name__ == "__main__":
-   try:
-       import signal
-       def signal_handler(sig, frame):
-           logger.info("Received stop signal, shutting down...")
-           cleanup()
-           os._exit(0)
-       signal.signal(signal.SIGINT, signal_handler)
-       
-       run_bot()
-       
-   except KeyboardInterrupt:
-       cleanup()
-       logger.info("Bot stopped by user")
-       
-   except Exception as e:
-       cleanup()
-       logger.error(f"Fatal error: {e}")
-       raise
+    run_bot()
