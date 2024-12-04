@@ -345,17 +345,24 @@ def update_word_progress(word: dict, is_correct: bool) -> dict:
         word["correct_answers"] = word.get("correct_answers", 0) + 1
         
         # Обновляем статус
-        if word["correct_answers"] >= 8:  # ЗДЕСЬ МЕНЯЕМ с 3 на 8
+        if word["correct_answers"] >= 8:
             word["status"] = WORD_STATUS["LEARNED"]
         elif word["correct_answers"] > 0:
             word["status"] = WORD_STATUS["LEARNING"]
             
-        # Обновляем время следующего повторения
+        # Обновляем время следующего повторения с учетом таймзоны Астаны
         next_interval = calculate_next_interval(word["correct_answers"])
-        word["next_review"] = (
-            datetime.datetime.now() + 
+        next_review_time = (
+            datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=6))) + 
             datetime.timedelta(hours=next_interval)
-        ).isoformat()
+        )
+        word["next_review"] = next_review_time.isoformat()
+        
+        logger.debug(
+            f"Word {word['word']} updated: "
+            f"correct_answers={word['correct_answers']}, "
+            f"next_review={word['next_review']}"
+        )
     
     return word
 
@@ -1357,96 +1364,50 @@ def test_notification(message):
 
         
 def check_and_send_notifications():
-    """Проверка и отправка уведомлений"""
-    logger.info("Starting notifications checker")
-    notification_lock = threading.Lock()
-    
     while True:
         try:
-            # Получаем время Астаны (UTC+6)
+            # Получаем время Астаны
             current_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=6)))
-            logger.debug(f"Checking notifications at {current_time}")
-            
-            # Проверяем время для уведомлений (8:00 - 23:00 по Астане)
-            current_hour = current_time.hour
-            if not (8 <= current_hour < 23):
-                logger.debug("Skipping notifications during quiet hours")
-                time.sleep(600)  # 10 минут
-                continue       
             
             if os.path.exists('user_data'):
                 for filename in os.listdir('user_data'):
-                    if not filename.startswith('user_') or not filename.endswith('.json'):
-                        continue
-                    
                     try:
                         user_id = int(filename.split('_')[1].split('.')[0])
                         user_data = load_user_data(user_id)
                         
-                        with notification_lock:
-                            state = user_states.get(user_id, {})
-                            
-                            # Пропускаем активных пользователей
-                            if state.get("awaiting_answer"):
+                        # Проверяем слова
+                        words_to_review = []
+                        for word in user_data["active_words"]:
+                            try:
+                                # Преобразуем время review в timezone Астаны
+                                review_time = datetime.datetime.fromisoformat(word["next_review"])
+                                review_time = review_time.replace(tzinfo=datetime.timezone(datetime.timedelta(hours=6)))
+                                
+                                if review_time <= current_time:
+                                    words_to_review.append(word)
+                            except:
                                 continue
-                            
-                            # Проверяем просроченные задачи и ближайшее время повторения
-                            words_to_review = []
-                            next_review_time = None
-                            
-                            for word in user_data["active_words"]:
-                                try:
-                                    review_time = datetime.datetime.fromisoformat(word["next_review"])
-                                    if review_time <= current_time:
-                                        words_to_review.append(word)
-                                    elif next_review_time is None or review_time < next_review_time:
-                                        next_review_time = review_time
-                                except:
-                                    continue
-                            
-                            # Обновляем время следующего уведомления
-                            if words_to_review:
-                                state["next_notification"] = current_time.isoformat()
-                            elif next_review_time:
-                                state["next_notification"] = next_review_time.isoformat()
-                            else:
-                                state.pop("next_notification", None)
-                            
-                            user_states[user_id] = state
-                            
-                            if words_to_review:
-                                # Формируем текст уведомления без форматирования Markdown
-                                notification_text = "🔔 Пора повторить задачи!\n\n"
-                                notification_text += f"У вас {len(words_to_review)} задач готово к повторению:\n\n"
+                        
+                        if words_to_review:
+                            try:
+                                notification_text = "🔔 Пора повторить слова!\n\n"
+                                notification_text += f"У вас {len(words_to_review)} слов готово к повторению:\n\n"
                                 
-                                # Показываем примеры задач
                                 for word in words_to_review[:3]:
-                                    review_time = datetime.datetime.fromisoformat(word["next_review"])
-                                    hours_overdue = int((current_time - review_time).total_seconds() // 3600)
-                                    notification_text += f"• {word['word']} (просрочено на {hours_overdue}ч)\n"
+                                    notification_text += f"• {word['word']} - {word['translation']}\n"
                                 
-                                if len(words_to_review) > 3:
-                                    notification_text += f"\n... и ещё {len(words_to_review) - 3} задач"
+                                bot.send_message(user_id, notification_text, reply_markup=get_main_keyboard())
+                                logger.info(f"Sent notification to user {user_id} for {len(words_to_review)} words")
+                            except Exception as e:
+                                logger.error(f"Error sending notification: {e}")
                                 
-                                try:
-                                    # Отправляем уведомление без parse_mode
-                                    bot.send_message(
-                                        user_id,
-                                        notification_text,
-                                        reply_markup=get_main_keyboard()
-                                    )
-                                    logger.info(f"Sent notification to user {user_id}")
-                                except Exception as e:
-                                    logger.error(f"Error sending notification to user {user_id}: {e}")
-                    
                     except Exception as e:
-                        logger.error(f"Error processing notifications for user {filename}: {e}")
-                        continue
-            
+                        logger.error(f"Error processing user: {e}")
+                        
         except Exception as e:
             logger.error(f"Error in notification check: {e}")
-        
-        time.sleep(600)  # Проверяем каждую минуту
+            
+        time.sleep(600)  # 10 минут
 
 
 # Добавьте перед функцией run_bot():
