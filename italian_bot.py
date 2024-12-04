@@ -531,7 +531,7 @@ def send_welcome(message):
        }
        
        welcome_text = (
-           "*Привет, Сашуля-красатуля! *\n\n"
+           "*Привет, Сашуля-красотуля! *\n\n"
            "Я бот для изучения итальянского языка.\n\n"
            f"📚 Активных слов: {len(user_data['active_words'])}\n"
            f"✅ Изучено слов: {len(user_data['learned_words'])}\n\n"
@@ -1333,8 +1333,6 @@ def test_notification(message):
         )
 
         
-       
-
 def check_and_send_notifications():
     """Проверка и отправка уведомлений"""
     logger.info("Starting notifications checker")
@@ -1342,15 +1340,16 @@ def check_and_send_notifications():
     
     while True:
         try:
-            current_time = datetime.datetime.now()
+            # Получаем время Астаны (UTC+6)
+            current_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=6)))
             logger.debug(f"Checking notifications at {current_time}")
             
-            # Проверяем время для уведомлений (8:00 - 23:00)
+            # Проверяем время для уведомлений (8:00 - 23:00 по Астане)
             current_hour = current_time.hour
             if not (8 <= current_hour < 23):
                 logger.debug("Skipping notifications during quiet hours")
-                time.sleep(300)  # 5 минут
-                continue
+                time.sleep(600)  # 10 минут
+                continue       
             
             if os.path.exists('user_data'):
                 for filename in os.listdir('user_data'):
