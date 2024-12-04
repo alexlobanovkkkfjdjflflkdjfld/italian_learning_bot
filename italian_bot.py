@@ -1385,11 +1385,25 @@ def check_and_send_notifications():
         time.sleep(600)  # 10 минут
 
         
+def ensure_single_instance():
+    import socket
+    try:
+        # Try to bind to a port - will fail if already bound
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(('localhost', 12345))
+        return True
+    except socket.error:
+        return False
+
 def run_bot():
     """Запуск бота"""
     logger.info("=== Starting Bot ===")
     logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
     
+    if not ensure_single_instance():
+        logger.error("Another instance is already running")
+        return
+
     def check_connection():
         try:
             import socket
@@ -1398,17 +1412,14 @@ def run_bot():
         except OSError:
             return False
 
-    while True:  # Только один цикл while True
+    while True:
         try:
-            # Очищаем старые апдейты
             bot.delete_webhook(drop_pending_updates=True)
             
-            # Ждем подключения
             while not check_connection():
                 logger.error("No connection to Telegram API. Waiting...")
                 time.sleep(10)
             
-            # Запускаем уведомления
             notification_thread = threading.Thread(
                 target=check_and_send_notifications,
                 daemon=True
@@ -1416,15 +1427,12 @@ def run_bot():
             notification_thread.start()
             logger.info("Notification thread started")
             
-            # Основной цикл
             bot.infinity_polling(
                 timeout=30,
                 long_polling_timeout=60,
                 logger_level=logging.ERROR,
                 restart_on_change=False,
-                skip_pending=True,
-                non_stop=False,  # Добавляем этот параметр
-                none_stop=False  # И этот для совместимости
+                skip_pending=True
             )
                     
         except KeyboardInterrupt:
@@ -1432,8 +1440,7 @@ def run_bot():
             break
         except Exception as e:
             logger.error(f"Fatal error: {e}")
-            time.sleep(60)
-            continue
+            time.sleep(600)
 
 if __name__ == "__main__":
     try:
