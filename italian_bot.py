@@ -1396,8 +1396,8 @@ def run_bot():
             return True
         except OSError:
             return False
-    
-    def start_bot():
+
+    while True:  # Только один цикл while True
         try:
             # Очищаем старые апдейты
             bot.delete_webhook(drop_pending_updates=True)
@@ -1424,13 +1424,6 @@ def run_bot():
                 skip_pending=True
             )
                     
-        except Exception as e:
-            logger.error(f"Critical error in start_bot: {e}")
-            time.sleep(30)
-    
-    while True:
-        try:
-            start_bot()
         except KeyboardInterrupt:
             logger.info("Bot stopped by user")
             break
