@@ -1400,69 +1400,48 @@ def run_bot():
     logger.info("=== Starting Bot ===")
     logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
     
-    if not ensure_single_instance():
-        logger.error("Another instance is already running")
-        return
-
-    def check_connection():
-        try:
-            import socket
-            socket.create_connection(("api.telegram.org", 443), timeout=5)
-            return True
-        except OSError:
-            return False
-
-    while True:
-        try:
-            bot.delete_webhook(drop_pending_updates=True)
-            
-            while not check_connection():
-                logger.error("No connection to Telegram API. Waiting...")
-                time.sleep(10)
-            
-            notification_thread = threading.Thread(
-                target=check_and_send_notifications,
-                daemon=True
-            )
-            notification_thread.start()
-            logger.info("Notification thread started")
-            
-            bot.infinity_polling(
-                timeout=30,
-                long_polling_timeout=60,
-                logger_level=logging.ERROR,
-                restart_on_change=False,
-                skip_pending=True
-            )
-                    
-        except KeyboardInterrupt:
-            logger.info("Bot stopped by user")
-            break
-        except Exception as e:
-            logger.error(f"Fatal error: {e}")
-            time.sleep(600)
-
+    try:
+        # Запускаем уведомления
+        notification_thread = threading.Thread(
+            target=check_and_send_notifications,
+            daemon=True
+        )
+        notification_thread.start()
+        logger.info("Notification thread started")
+        
+        # Устанавливаем webhook в None
+        bot.remove_webhook()
+        time.sleep(1)
+        
+        # Запускаем простой поллинг
+        bot.polling(none_stop=True)
+        
+    except Exception as e:
+        logger.error(f"Bot error: {e}")
+        time.sleep(10)
+        run_bot()  # Рекурсивный перезапуск при ошибке
 
 def cleanup():
-    global _lock_socket
-    if '_lock_socket' in globals():
-        _lock_socket.close()
+   global _lock_socket
+   if '_lock_socket' in globals():
+       _lock_socket.close()
 
-# В main добавить:
 if __name__ == "__main__":
-    try:
-        import signal
-        def signal_handler(sig, frame):
-            logger.info("Received stop signal, shutting down...")
-            cleanup()  # Добавить очистку
-            os._exit(0)
-        signal.signal(signal.SIGINT, signal_handler)
-        
-        run_bot()
-    except KeyboardInterrupt:
-        cleanup()  # И здесь тоже
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        cleanup()  # И здесь
-        logger.error(f"Fatal error: {e}")
-        raise
+   try:
+       import signal
+       def signal_handler(sig, frame):
+           logger.info("Received stop signal, shutting down...")
+           cleanup()
+           os._exit(0)
+       signal.signal(signal.SIGINT, signal_handler)
+       
+       run_bot()
+       
+   except KeyboardInterrupt:
+       cleanup()
+       logger.info("Bot stopped by user")
+       
+   except Exception as e:
+       cleanup()
+       logger.error(f"Fatal error: {e}")
+       raise
