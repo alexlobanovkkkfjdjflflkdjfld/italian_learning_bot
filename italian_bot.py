@@ -11,6 +11,19 @@ from typing import Dict, Optional, List
 from vocabulary import VOCABULARY
 import threading  # Добавляем этот импорт
 import requests  # И этот тоже нужен для проверки соединения
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running"
+
+# Запуск Flask в отдельном потоке
+def run_flask():
+    app.run(host='0.0.0.0', port=10000)
+
+flask_thread = threading.Thread(target=run_flask, daemon=True)
+flask_thread.start()
 
 def keep_alive():
     """Автопробуждение бота"""
