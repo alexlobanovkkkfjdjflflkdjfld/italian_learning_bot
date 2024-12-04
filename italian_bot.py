@@ -11,19 +11,7 @@ from typing import Dict, Optional, List
 from vocabulary import VOCABULARY
 import threading  # Добавляем этот импорт
 import requests  # И этот тоже нужен для проверки соединения
-from flask import Flask
-app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "Bot is running"
-
-# Запуск Flask в отдельном потоке
-def run_flask():
-    app.run(host='0.0.0.0', port=10000)
-
-flask_thread = threading.Thread(target=run_flask, daemon=True)
-flask_thread.start()
 
        
 # Настройки для повторных попыток и таймаутов
@@ -1401,13 +1389,6 @@ def run_bot():
     logger.info("=== Starting Bot ===")
     logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
     
-    # Принудительная очистка перед запуском
-    try:
-        bot.delete_webhook(drop_pending_updates=True)
-        time.sleep(3)
-    except Exception as e:
-        logger.error(f"Error clearing webhook: {e}")
-    
     def check_connection():
         try:
             import socket
@@ -1415,45 +1396,48 @@ def run_bot():
             return True
         except OSError:
             return False
-            
-    def ping_server():
-        while True:
-            try:
-                requests.get("https://italian-learning-bot.onrender.com")
-                logger.debug("Keep alive ping sent")
-            except Exception as e:
-                logger.error(f"Ping error: {e}")
-            time.sleep(600)
     
-    try:
-        # Запускаем уведомления
-        notification_thread = threading.Thread(
-            target=check_and_send_notifications,
-            daemon=True
-        )
-        notification_thread.start()
-        logger.info("Notification thread started")
-        
-        # Запускаем пинг
-        ping_thread = threading.Thread(
-            target=ping_server,
-            daemon=True
-        )
-        ping_thread.start()
-        
-        # Основной цикл
-        bot.infinity_polling(
-            timeout=30,
-            long_polling_timeout=60,
-            logger_level=logging.ERROR,
-            restart_on_change=False,
-            skip_pending=True,
-            allowed_updates=['message']
-        )
-                
-    except Exception as e:
-        logger.error(f"Critical error in start_bot: {e}")
-        time.sleep(30)
+    def start_bot():
+        try:
+            # Очищаем старые апдейты
+            bot.delete_webhook(drop_pending_updates=True)
+            
+            # Ждем подключения
+            while not check_connection():
+                logger.error("No connection to Telegram API. Waiting...")
+                time.sleep(10)
+            
+            # Запускаем уведомления
+            notification_thread = threading.Thread(
+                target=check_and_send_notifications,
+                daemon=True
+            )
+            notification_thread.start()
+            logger.info("Notification thread started")
+            
+            # Основной цикл
+            bot.infinity_polling(
+                timeout=30,
+                long_polling_timeout=60,
+                logger_level=logging.ERROR,
+                restart_on_change=False,
+                skip_pending=True
+            )
+                    
+        except Exception as e:
+            logger.error(f"Critical error in start_bot: {e}")
+            time.sleep(30)
+    
+    while True:
+        try:
+            start_bot()
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user")
+            break
+        except Exception as e:
+            logger.error(f"Fatal error: {e}")
+            time.sleep(60)
+            continue
 
 if __name__ == "__main__":
     try:
