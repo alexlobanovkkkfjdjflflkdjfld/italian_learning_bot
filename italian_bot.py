@@ -12,6 +12,15 @@ from vocabulary import VOCABULARY
 import threading  # Добавляем этот импорт
 import requests  # И этот тоже нужен для проверки соединения
 
+def keep_alive():
+    """Автопробуждение бота"""
+    while True:
+        try:
+            requests.get("https://italian-learning-bot.onrender.com")
+            logger.info("Keep alive ping sent")
+        except Exception as e:
+            logger.error(f"Keep alive error: {e}")
+        time.sleep(10*60)
 
 # Запуск в отдельном потоке
 keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
@@ -268,7 +277,10 @@ def save_user_data(user_id: int, data: dict):
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        logger.debug("Data saved successfully")
+        logger.debug(f"Data saved successfully: {file_path}")
+        # Показать содержимое директории
+        files = os.listdir('user_data')
+        logger.info(f"Current user data files: {files}")
     except Exception as e:
         logger.error(f"Error saving data: {e}")
 
@@ -1431,8 +1443,6 @@ def keep_alive():
 def run_bot():
     """Запуск бота"""
     logger.info("=== Starting Bot ===")
-    keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
-    keep_alive_thread.start()
     logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
     
     # Добавляем очистку перед запуском
