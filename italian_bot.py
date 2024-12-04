@@ -25,21 +25,7 @@ def run_flask():
 flask_thread = threading.Thread(target=run_flask, daemon=True)
 flask_thread.start()
 
-def keep_alive():
-    """Автопробуждение бота"""
-    while True:
-        try:
-            requests.get("https://italian-learning-bot.onrender.com")
-            logger.info("Keep alive ping sent")
-        except Exception as e:
-            logger.error(f"Keep alive error: {e}")
-        time.sleep(10*60)
-
-# Запуск в отдельном потоке
-keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
-keep_alive_thread.start()
-
-        
+       
 # Настройки для повторных попыток и таймаутов
 telebot.apihelper.RETRY_ON_ERROR = True
 telebot.apihelper.CONNECT_TIMEOUT = 30
@@ -1409,19 +1395,6 @@ def check_and_send_notifications():
             
         time.sleep(600)  # 10 минут
 
-
-# Добавьте перед функцией run_bot():
-def keep_alive():
-   """Автопробуждение бота"""
-   while True:
-       try:
-           requests.get("https://italian-learning-bot.onrender.com")
-           logger.info("Keep alive ping sent")
-       except Exception as e:
-           logger.error(f"Keep alive error: {e}")
-       time.sleep(10*60)  # пинг каждые 10 минут
-
-
         
 def run_bot():
     """Запуск бота"""
@@ -1431,7 +1404,7 @@ def run_bot():
     # Принудительная очистка перед запуском
     try:
         bot.delete_webhook(drop_pending_updates=True)
-        time.sleep(3)  # Ждем очистки
+        time.sleep(3)
     except Exception as e:
         logger.error(f"Error clearing webhook: {e}")
     
@@ -1442,58 +1415,57 @@ def run_bot():
             return True
         except OSError:
             return False
-    
-    def start_bot():
-        try:
-            while not check_connection():
-                logger.error("No connection to Telegram API. Waiting...")
-                time.sleep(10)
             
+    def ping_server():
+        while True:
             try:
-                bot_info = bot.get_me()
-                logger.info(f"Bot authorized successfully. Bot username: {bot_info.username}")
+                requests.get("https://italian-learning-bot.onrender.com")
+                logger.debug("Keep alive ping sent")
             except Exception as e:
-                logger.error(f"Failed to get bot info: {e}")
-                time.sleep(10)
-                return
-            
-            # Запускаем уведомления
-            notification_thread = threading.Thread(
-                target=check_and_send_notifications,
-                daemon=True
-            )
-            notification_thread.start()
-            logger.info("Notification thread started")
-            
-            # Основной цикл
-            bot.infinity_polling(
-                timeout=30,
-                long_polling_timeout=60,
-                logger_level=logging.ERROR,
-                restart_on_change=False,
-                skip_pending=True,
-                allowed_updates=['message']
-            )
-                    
-        except Exception as e:
-            logger.error(f"Critical error in start_bot: {e}")
-            time.sleep(30)
+                logger.error(f"Ping error: {e}")
+            time.sleep(600)
     
-    # Запускаем бот
-    start_bot()
+    try:
+        # Запускаем уведомления
+        notification_thread = threading.Thread(
+            target=check_and_send_notifications,
+            daemon=True
+        )
+        notification_thread.start()
+        logger.info("Notification thread started")
+        
+        # Запускаем пинг
+        ping_thread = threading.Thread(
+            target=ping_server,
+            daemon=True
+        )
+        ping_thread.start()
+        
+        # Основной цикл
+        bot.infinity_polling(
+            timeout=30,
+            long_polling_timeout=60,
+            logger_level=logging.ERROR,
+            restart_on_change=False,
+            skip_pending=True,
+            allowed_updates=['message']
+        )
+                
+    except Exception as e:
+        logger.error(f"Critical error in start_bot: {e}")
+        time.sleep(30)
 
 if __name__ == "__main__":
-   try:
-       import signal
-       def signal_handler(sig, frame):
-           logger.info("Received stop signal, shutting down...")
-           os._exit(0)
-       signal.signal(signal.SIGINT, signal_handler)
-       
-       run_bot()
-   except KeyboardInterrupt:
-       logger.info("Bot stopped by user")
-   except Exception as e:
-       logger.error(f"Fatal error: {e}")
-       raise
-       
+    try:
+        import signal
+        def signal_handler(sig, frame):
+            logger.info("Received stop signal, shutting down...")
+            os._exit(0)
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        run_bot()
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        raise
