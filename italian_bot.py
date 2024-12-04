@@ -1401,6 +1401,10 @@ def run_bot():
     logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
     
     try:
+        # Очищаем предыдущие обновления
+        bot.delete_webhook()
+        time.sleep(1)
+        
         # Запускаем уведомления
         notification_thread = threading.Thread(
             target=check_and_send_notifications,
@@ -1409,17 +1413,18 @@ def run_bot():
         notification_thread.start()
         logger.info("Notification thread started")
         
-        # Устанавливаем webhook в None
-        bot.remove_webhook()
-        time.sleep(1)
-        
-        # Запускаем простой поллинг
-        bot.polling(none_stop=True)
+        # Обновлённый polling с правильными параметрами
+        bot.polling(
+            non_stop=True,
+            interval=3,
+            timeout=20,
+            long_polling_timeout=10
+        )
         
     except Exception as e:
         logger.error(f"Bot error: {e}")
-        time.sleep(10)
-        run_bot()  # Рекурсивный перезапуск при ошибке
+        time.sleep(15)  # Увеличил время ожидания
+        run_bot()
 
 def cleanup():
    global _lock_socket
