@@ -1428,15 +1428,14 @@ def run_bot():
     logger.info("=== Starting Bot ===")
     logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
     
-    # Добавляем очистку перед запуском
+    # Принудительная очистка перед запуском
     try:
-        bot.delete_webhook()
-        bot.get_updates(offset=-1)
+        bot.delete_webhook(drop_pending_updates=True)
+        time.sleep(3)  # Ждем очистки
     except Exception as e:
-        logger.error(f"Error clearing updates: {e}")
+        logger.error(f"Error clearing webhook: {e}")
     
     def check_connection():
-        """Проверка соединения с Telegram API"""
         try:
             import socket
             socket.create_connection(("api.telegram.org", 443), timeout=5)
@@ -1446,12 +1445,10 @@ def run_bot():
     
     def start_bot():
         try:
-            # Ждем подключения
             while not check_connection():
                 logger.error("No connection to Telegram API. Waiting...")
                 time.sleep(10)
             
-            # Проверяем токен
             try:
                 bot_info = bot.get_me()
                 logger.info(f"Bot authorized successfully. Bot username: {bot_info.username}")
@@ -1469,40 +1466,21 @@ def run_bot():
             logger.info("Notification thread started")
             
             # Основной цикл
-            while True:
-                try:
-                    logger.info("Starting bot polling...")
-                    bot.infinity_polling(
-                        timeout=30,
-                        long_polling_timeout=60,
-                        logger_level=logging.ERROR,
-                        restart_on_change=False,
-                        skip_pending=True
-                    )
-                except Exception as e:
-                    logger.error(f"Polling error: {e}")
-                    if not check_connection():
-                        logger.error("Connection lost. Waiting to reconnect...")
-                        time.sleep(10)
-                    else:
-                        time.sleep(5)
-                    continue
+            bot.infinity_polling(
+                timeout=30,
+                long_polling_timeout=60,
+                logger_level=logging.ERROR,
+                restart_on_change=False,
+                skip_pending=True,
+                allowed_updates=['message']
+            )
                     
         except Exception as e:
             logger.error(f"Critical error in start_bot: {e}")
             time.sleep(30)
     
-    # Запускаем бот с автоматическим перезапуском
-    while True:
-        try:
-            start_bot()
-        except KeyboardInterrupt:
-            logger.info("Bot stopped by user")
-            break
-        except Exception as e:
-            logger.error(f"Fatal error: {e}")
-            time.sleep(60)
-            continue
+    # Запускаем бот
+    start_bot()
 
 if __name__ == "__main__":
    try:
