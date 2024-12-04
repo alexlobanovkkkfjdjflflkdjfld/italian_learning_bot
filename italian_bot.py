@@ -1228,12 +1228,22 @@ def handle_answer(message):
         state["last_activity"] = datetime.datetime.now().isoformat()
         user_states[user_id] = state
 
+        # ... предыдущий код функции ...
+
         bot.reply_to(
             message,
             response,
             parse_mode='Markdown',
             reply_markup=markup
         )
+
+        # Добавляем здесь проверку содержимого файла
+        if is_correct:
+            try:
+                with open(f'user_data/user_{user_id}.json', 'r', encoding='utf-8') as f:
+                    logger.info(f"File contents after save: {f.read()}")
+            except Exception as e:
+                logger.error(f"Error reading file: {e}")
 
     except Exception as e:
         logger.error(f"Error handling answer: {e}", exc_info=True)
