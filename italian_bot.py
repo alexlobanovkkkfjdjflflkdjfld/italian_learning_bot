@@ -13,6 +13,9 @@ import threading  # Добавляем этот импорт
 import requests  # И этот тоже нужен для проверки соединения
 
 
+# Запуск в отдельном потоке
+keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
+keep_alive_thread.start()
 
         
 # Настройки для повторных попыток и таймаутов
@@ -780,82 +783,48 @@ def next_exercise(message):
     
     try:
         user_data = load_user_data(user_id)
-        current_session = user_data.get("current_session", [])
+        
+        # Проверяем, есть ли ещё слова в текущей сессии
+        if not user_data.get("current_session"):
+            logger.debug("No current session")
+            bot.reply_to(
+                message,
+                "❌ Нет активной сессии. Начните новое занятие.",
+                reply_markup=get_main_keyboard()
+            )
+            return
+            
         current_index = user_data.get("current_word_index", 0)
+        logger.debug(f"Current index: {current_index}, Session length: {len(user_data['current_session'])}")
         
-        if not current_session or current_index >= len(current_session) - 1:
-            words_to_review = get_words_for_review(user_data)
-            
-            if not words_to_review:
-                user_data["current_session"] = []
-                user_data["current_word_index"] = 0
-                save_user_data(user_id, user_data)
-                
-                next_review = None
-                for word in user_data["active_words"]:
-                    try:
-                        review_time = datetime.datetime.fromisoformat(word["next_review"])
-                        if next_review is None or review_time < next_review:
-                            next_review = review_time
-                    except:
-                        continue
-
-                if next_review:
-                    time_diff = next_review - datetime.datetime.now()
-                    time_str = ""
-                    if time_diff.total_seconds() > 0:
-                        hours = int(time_diff.total_seconds() // 3600)
-                        minutes = int((time_diff.total_seconds() % 3600) // 60)
-                        time_str = f"\n⏰ Следующее повторение через: *{hours}ч {minutes}мин*"
-                
-                bot.reply_to(
-                    message,
-                    f"✅ Все слова повторены!{time_str}\n\n🔔 Я пришлю уведомление, когда придет время для повторения.",
-                    parse_mode='Markdown',
-                    reply_markup=get_main_keyboard()
-                )
-                return
-            
-            # Если есть слова для повторения
-            current_words = []
-            future_words = []
-            
-            # Разделяем на текущие и будущие
-            current_time = datetime.datetime.now()
-            for word in words_to_review:
-                review_time = datetime.datetime.fromisoformat(word["next_review"])
-                if review_time <= current_time:
-                    current_words.append(word)
-                else:
-                    future_words.append(word)
-            
-            # Сортируем текущие по времени (самые старые первые)
-            current_words.sort(key=lambda x: x["next_review"])
-            random.shuffle(future_words)
-            
-            # Обновляем сессию
-            user_data["current_session"] = current_words + future_words
+        if current_index >= len(user_data["current_session"]) - 1:
+            # Завершаем сессию
+            user_data["current_session"] = []
             user_data["current_word_index"] = 0
+            save_user_data(user_id, user_data)
             
-            if current_words:
-                bot.reply_to(
-                    message,
-                    f"📚 Начинаем повторение!\n❗️ Есть {len(current_words)} просроченных слов, начнем с них.",
-                    reply_markup=get_exercise_keyboard()
-                )
-        else:
-            user_data["current_word_index"] += 1
+            bot.reply_to(
+                message,
+                "✅ Все задания на текущий момент выполнены!\n\n"
+                "Вернитесь в главное меню и начните новое занятие, когда будете готовы.",
+                reply_markup=get_main_keyboard()
+            )
+            return
         
+        # Переходим к следующему слову
+        user_data["current_word_index"] += 1
         save_user_data(user_id, user_data)
         
+        # Обновляем состояние
         state = user_states.get(user_id, {})
         state["awaiting_answer"] = True
         user_states[user_id] = state
         
+        # Показываем следующее упражнение
         show_current_exercise(message.chat.id, user_id)
         
     except Exception as e:
-        logger.error(f"Error in next_exercise: {e}")
+        logger.error(f"Error in next_exercise: {e}", exc_info=True)
         bot.reply_to(
             message,
             "❌ Произошла ошибка. Попробуйте начать заново.",
@@ -1460,88 +1429,87 @@ def keep_alive():
 
         
 def run_bot():
-   """Запуск бота"""
-   logger.info("=== Starting Bot ===")
-   keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
-   keep_alive_thread.start()
-   logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
-   
-
-   def check_connection():
-       """Проверка соединения с Telegram API"""
-       try:
-           import socket
-           socket.create_connection(("api.telegram.org", 443), timeout=5)
-           return True
-       except OSError:
-           return False
-   
-   def start_bot():
-       try:
-           # Ждем подключения
-           while not check_connection():
-               logger.error("No connection to Telegram API. Waiting...")
-               time.sleep(10)
-           
-           # Проверяем токен
-           try:
-               bot_info = bot.get_me()
-               logger.info(f"Bot authorized successfully. Bot username: {bot_info.username}")
-           except Exception as e:
-               logger.error(f"Failed to get bot info: {e}")
-               time.sleep(10)
-               return
-           
-           # Очищаем старые апдейты
-           bot.delete_webhook()
-           logger.info("Webhook deleted")
-           bot.get_updates(offset=-1, timeout=1)
-           logger.info("Updates cleared")
-           
-           # Запускаем уведомления
-           import threading
-           notification_thread = threading.Thread(
-               target=check_and_send_notifications,
-               daemon=True
-           )
-           notification_thread.start()
-           logger.info("Notification thread started")
-           
-           # Основной цикл
-           while True:
-               try:
-                   logger.info("Starting bot polling...")
-                   bot.infinity_polling(
-                       timeout=15,
-                       long_polling_timeout=30,
-                       logger_level=logging.ERROR,
-                       restart_on_change=False,
-                       skip_pending=True
-                   )
-               except Exception as e:
-                   logger.error(f"Polling error: {e}")
-                   if not check_connection():
-                       logger.error("Connection lost. Waiting to reconnect...")
-                       time.sleep(10)
-                   else:
-                       time.sleep(5)
-                   continue
-                   
-       except Exception as e:
-           logger.error(f"Critical error in start_bot: {e}")
-           time.sleep(30)
-   
-   # Запускаем бот с автоматическим перезапуском
-   while True:
-       try:
-           start_bot()
-       except KeyboardInterrupt:
-           logger.info("Bot stopped by user")
-           break
-       except Exception as e:
-           logger.error(f"Fatal error: {e}")
-           time.sleep(60)
-           continue
+    """Запуск бота"""
+    logger.info("=== Starting Bot ===")
+    keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
+    keep_alive_thread.start()
+    logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
+    
+    # Добавляем очистку перед запуском
+    try:
+        bot.delete_webhook()
+        bot.get_updates(offset=-1)
+    except Exception as e:
+        logger.error(f"Error clearing updates: {e}")
+    
+    def check_connection():
+        """Проверка соединения с Telegram API"""
+        try:
+            import socket
+            socket.create_connection(("api.telegram.org", 443), timeout=5)
+            return True
+        except OSError:
+            return False
+    
+    def start_bot():
+        try:
+            # Ждем подключения
+            while not check_connection():
+                logger.error("No connection to Telegram API. Waiting...")
+                time.sleep(10)
+            
+            # Проверяем токен
+            try:
+                bot_info = bot.get_me()
+                logger.info(f"Bot authorized successfully. Bot username: {bot_info.username}")
+            except Exception as e:
+                logger.error(f"Failed to get bot info: {e}")
+                time.sleep(10)
+                return
+            
+            # Запускаем уведомления
+            notification_thread = threading.Thread(
+                target=check_and_send_notifications,
+                daemon=True
+            )
+            notification_thread.start()
+            logger.info("Notification thread started")
+            
+            # Основной цикл
+            while True:
+                try:
+                    logger.info("Starting bot polling...")
+                    bot.infinity_polling(
+                        timeout=30,
+                        long_polling_timeout=60,
+                        logger_level=logging.ERROR,
+                        restart_on_change=False,
+                        skip_pending=True
+                    )
+                except Exception as e:
+                    logger.error(f"Polling error: {e}")
+                    if not check_connection():
+                        logger.error("Connection lost. Waiting to reconnect...")
+                        time.sleep(10)
+                    else:
+                        time.sleep(5)
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Critical error in start_bot: {e}")
+            time.sleep(30)
+    
+    # Запускаем бот с автоматическим перезапуском
+    while True:
+        try:
+            start_bot()
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user")
+            break
+        except Exception as e:
+            logger.error(f"Fatal error: {e}")
+            time.sleep(60)
+            continue
 
 if __name__ == "__main__":
    try:
