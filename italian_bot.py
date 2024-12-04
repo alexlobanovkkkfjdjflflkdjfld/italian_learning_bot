@@ -12,6 +12,9 @@ from vocabulary import VOCABULARY
 import threading  # Добавляем этот импорт
 import requests  # И этот тоже нужен для проверки соединения
 
+port = os.environ.get('PORT', 5000)
+TOKEN = "7312843542:AAHVDxaHYSveOpitmkWagTFoMVNzYF4_tMU"
+bot = telebot.TeleBot(TOKEN, parse_mode=None)
 
        
 # Настройки для повторных попыток и таймаутов
@@ -33,8 +36,8 @@ telebot_logger = logging.getLogger('TeleBot')
 telebot_logger.setLevel(logging.WARNING)
 
 # Конфигурация
-TOKEN = "7312843542:AAHVDxaHYSveOpitmkWagTFoMVNzYF4_tMU"
-bot = telebot.TeleBot(TOKEN, parse_mode=None)
+# TOKEN = "7312843542:AAHVDxaHYSveOpitmkWagTFoMVNzYF4_tMU"
+# bot = telebot.TeleBot(TOKEN, parse_mode=None)
 
 # Глобальное хранилище состояний пользователей
 user_states = {}
