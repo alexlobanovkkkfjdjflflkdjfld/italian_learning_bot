@@ -35,6 +35,7 @@ telebot_logger.setLevel(logging.WARNING)
 # Конфигурация
 TOKEN = "7312843542:AAHVDxaHYSveOpitmkWagTFoMVNzYF4_tMU"
 bot = telebot.TeleBot(TOKEN)
+bot.threaded = False  # Отключаем многопоточность
 
 # Глобальное хранилище состояний пользователей
 user_states = {}
@@ -1421,7 +1422,9 @@ def run_bot():
                 long_polling_timeout=60,
                 logger_level=logging.ERROR,
                 restart_on_change=False,
-                skip_pending=True
+                skip_pending=True,
+                non_stop=False,  # Добавляем этот параметр
+                none_stop=False  # И этот для совместимости
             )
                     
         except KeyboardInterrupt:
