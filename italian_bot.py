@@ -34,8 +34,7 @@ telebot_logger.setLevel(logging.WARNING)
 
 # Конфигурация
 TOKEN = "7312843542:AAHVDxaHYSveOpitmkWagTFoMVNzYF4_tMU"
-bot = telebot.TeleBot(TOKEN)
-bot.threaded = False  # Отключаем многопоточность
+bot = telebot.TeleBot(TOKEN, threaded=True)  # Включаем многопоточность
 
 # Глобальное хранилище состояний пользователей
 user_states = {}
@@ -1339,50 +1338,57 @@ def test_notification(message):
 
         
 def check_and_send_notifications():
-    while True:
-        try:
-            # Получаем время Астаны
-            current_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=6)))
-            
-            if os.path.exists('user_data'):
-                for filename in os.listdir('user_data'):
-                    try:
-                        user_id = int(filename.split('_')[1].split('.')[0])
-                        user_data = load_user_data(user_id)
-                        
-                        # Проверяем слова
-                        words_to_review = []
-                        for word in user_data["active_words"]:
-                            try:
-                                # Преобразуем время review в timezone Астаны
-                                review_time = datetime.datetime.fromisoformat(word["next_review"])
-                                review_time = review_time.replace(tzinfo=datetime.timezone(datetime.timedelta(hours=6)))
-                                
-                                if review_time <= current_time:
-                                    words_to_review.append(word)
-                            except:
-                                continue
-                        
-                        if words_to_review:
-                            try:
-                                notification_text = "🔔 Пора повторить слова!\n\n"
-                                notification_text += f"У вас {len(words_to_review)} слов готово к повторению:\n\n"
-                                
-                                for word in words_to_review[:3]:
-                                    notification_text += f"• {word['word']} - {word['translation']}\n"
-                                
-                                bot.send_message(user_id, notification_text, reply_markup=get_main_keyboard())
-                                logger.info(f"Sent notification to user {user_id} for {len(words_to_review)} words")
-                            except Exception as e:
-                                logger.error(f"Error sending notification: {e}")
-                                
-                    except Exception as e:
-                        logger.error(f"Error processing user: {e}")
-                        
-        except Exception as e:
-            logger.error(f"Error in notification check: {e}")
-            
-        time.sleep(600)  # 10 минут
+   while True:
+       try:
+           current_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=6)))
+           
+           if not os.path.exists('user_data'):
+               continue
+
+           for filename in os.listdir('user_data'):
+               try:
+                   user_id = int(filename.split('_')[1].split('.')[0])
+                   user_data = load_user_data(user_id)
+                   words_to_review = []
+                   
+                   for word in user_data["active_words"]:
+                       try:
+                           review_time = datetime.datetime.fromisoformat(word["next_review"])
+                           review_time = review_time.replace(tzinfo=datetime.timezone(datetime.timedelta(hours=6)))
+                           
+                           if review_time <= current_time:
+                               words_to_review.append(word)
+                       except Exception as e:
+                           logger.error(f"Error processing word: {e}")
+                           continue
+
+                   if words_to_review:
+                       notification_text = "🔔 Пора повторить слова!\n\n"
+                       notification_text += f"У вас {len(words_to_review)} слов готово к повторению:\n\n"
+                       
+                       for word in words_to_review[:3]:
+                           notification_text += f"• {word['word']} - {word['translation']}\n"
+                       
+                       try:
+                           bot.send_message(
+                               user_id, 
+                               notification_text, 
+                               reply_markup=get_main_keyboard()
+                           )
+                           logger.info(f"Sent notification to user {user_id}")
+                       except Exception as e:
+                           logger.error(f"Failed to send notification: {e}")
+                           
+               except Exception as e:
+                   logger.error(f"Error processing user file: {e}")
+                   continue
+                   
+       except Exception as e:
+           logger.error(f"Error in notification check: {e}")
+           
+       time.sleep(600)
+
+
 
         
 def ensure_single_instance():
@@ -1396,35 +1402,29 @@ def ensure_single_instance():
         return False
 
 def run_bot():
-    """Запуск бота"""
-    logger.info("=== Starting Bot ===")
-    logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
-    
-    try:
-        # Очищаем предыдущие обновления
-        bot.delete_webhook()
-        time.sleep(1)
-        
-        # Запускаем уведомления
-        notification_thread = threading.Thread(
-            target=check_and_send_notifications,
-            daemon=True
-        )
-        notification_thread.start()
-        logger.info("Notification thread started")
-        
-        # Обновлённый polling с правильными параметрами
-        bot.polling(
-            non_stop=True,
-            interval=3,
-            timeout=20,
-            long_polling_timeout=10
-        )
-        
-    except Exception as e:
-        logger.error(f"Bot error: {e}")
-        time.sleep(15)  # Увеличил время ожидания
-        run_bot()
+   logger.info("=== Starting Bot ===")
+   logger.info(f"Vocabulary size: {len(VOCABULARY['Буду изучать'])} words")
+
+   try:
+       notification_thread = threading.Thread(
+           target=check_and_send_notifications, 
+           daemon=True
+       )
+       notification_thread.start()
+       logger.info("Notification thread started")
+       
+       bot.remove_webhook()
+       bot.delete_webhook()
+       
+       bot.polling(
+           non_stop=True,
+           interval=1,
+           timeout=20
+       )
+       
+   except Exception as e:
+       logger.error(f"Bot error: {e}")
+       sys.exit(1)
 
 def cleanup():
    global _lock_socket
