@@ -16,6 +16,9 @@ import speech_recognition as sr
 import requests
 import tempfile
 import shutil  # Добавлено для работы с файлами
+from gtts import gTTS
+import asyncio
+
 
 # Базовые настройки логирования
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -43,6 +46,7 @@ WORD_STATUS = {
     "LEARNING": "learning",
     "LEARNED": "learned"
 }
+
 
 def get_now() -> datetime.datetime:
     """Унифицированное получение текущего времени"""
@@ -114,14 +118,14 @@ def save_user_data(user_id: int, data: dict):
    with open(file_path, 'w', encoding='utf-8') as f:
        json.dump(data, f, ensure_ascii=False, indent=2)
 
+# Изменение функции get_words_for_review
 def get_words_for_review(user_data: dict) -> List[dict]:
     """Получение списка слов для повторения"""
     logger.debug(f"Getting words for review from active words: {[w['word'] for w in user_data['active_words']]}")
     
     current_time = get_now()
-    overdue_words = []
-    future_words = []
-    new_words = []
+    return [word for word in user_data["active_words"] 
+            if parse_time(word["next_review"]) <= current_time]
 
     # Разделяем слова на категории
     for word in user_data["active_words"]:
@@ -176,9 +180,10 @@ def update_word_progress(word: dict, is_correct: bool) -> dict:
 def get_main_keyboard():
    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
    markup.row(types.KeyboardButton("🎯 Начать повторение"))
-   markup.row(types.KeyboardButton("🔄 Сменить направление перевода"), 
+   markup.row(types.KeyboardButton("🔀 Сменить направление перевода"),  # Новый значок
               types.KeyboardButton("📊 Статистика"))
-   markup.row(types.KeyboardButton("/start"), types.KeyboardButton("ℹ️ Помощь"))
+   markup.row(types.KeyboardButton("♻️ Перезапустить бота"),  # Новый значок
+              types.KeyboardButton("ℹ️ Помощь"))
    return markup
 
 def get_exercise_keyboard() -> types.ReplyKeyboardMarkup:
@@ -186,14 +191,14 @@ def get_exercise_keyboard() -> types.ReplyKeyboardMarkup:
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(types.KeyboardButton("💡 Подсказка"), 
                types.KeyboardButton("🎤 Голосовой ответ"))
-    markup.row(types.KeyboardButton("🔄 Сменить направление"), 
+    markup.row(types.KeyboardButton("🔀 Сменить направление"),  # Тот же значок что и в главном меню
                types.KeyboardButton("⏩ Пропустить"))
     markup.row(types.KeyboardButton("🏁 Завершить занятие"))
     return markup
 
 def get_next_keyboard():
-   markup = types.ReplyKeyboardMarkup(resize_keyboard=True) 
-   markup.row(types.KeyboardButton("➡️ Далее"))
+   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+   markup.row(types.KeyboardButton("➡️ Далее"), types.KeyboardButton("🔊 Прослушать"))
    markup.row(types.KeyboardButton("🏁 Завершить занятие"))
    return markup
 
@@ -238,8 +243,6 @@ def check_answer(user_answer: str, correct_answer: str, alternatives: List[str])
            
    return False
 
-import asyncio
-
 def delete_messages_with_delay(chat_id: int, message_ids: list):
     """Удаление сообщений с небольшой задержкой для анимации"""
     for msg_id in message_ids:
@@ -249,7 +252,7 @@ def delete_messages_with_delay(chat_id: int, message_ids: list):
             bot.delete_message(chat_id, msg_id)
         except Exception as e:
             logger.debug(f"Could not delete message {msg_id}: {e}")
-            
+    
 @bot.message_handler(func=lambda message: message.text == "🎤 Голосовой ответ")
 def voice_answer_prompt(message):
     user_id = message.from_user.id
@@ -262,65 +265,55 @@ def voice_answer_prompt(message):
         reply_markup=get_exercise_keyboard()
     )
     
-    # Добавляем ID сообщений в список
+    # Добавляем ID сообщений
     message_ids = state.get("message_ids", [])
     message_ids.extend([message.message_id, sent_message.message_id])
-    user_states[user_id]["message_ids"] = message_ids
+    state["message_ids"] = message_ids
+    user_states[user_id] = state
     
-    
-# @bot.message_handler(content_types=['voice'])
-# def handle_voice(message):
-    # """Обработка голосовых сообщений"""
-    # try:
-        # user_id = message.from_user.id
-        # state = user_states.get(user_id, {})
-        # if not state.get("awaiting_answer"):
-            # return
-
-        # # Получаем файл
-        # file_info = bot.get_file(message.voice.file_id)
-        # file_path = file_info.file_path
-        # file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file_path}"
-
-        # # Скачиваем аудио во временный файл
-        # with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_ogg:
-            # response = requests.get(file_url)
-            # temp_ogg.write(response.content)
-            # temp_ogg_path = temp_ogg.name
-
-        # # Конвертируем в wav
-        # with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
-            # audio = AudioSegment.from_ogg(temp_ogg_path)
-            # audio.export(temp_wav.name, format="wav")
-            # temp_wav_path = temp_wav.name
-
-        # # Распознаем речь
-        # r = sr.Recognizer()
-        # with sr.AudioFile(temp_wav_path) as source:
-            # audio_data = r.record(source)
+        
+@bot.message_handler(func=lambda message: message.text == "🔊 Прослушать")
+def play_phrase(message):
+    try:
+        user_id = message.from_user.id
+        state = user_states.get(user_id, {})
+        example = state.get("current_example")
+        if not example:
+            return
             
-            # # Выбираем язык в зависимости от направления перевода
-            # if state["translation_direction"] == "ru_to_it":
-                # text = r.recognize_google(audio_data, language="it-IT")
-            # else:
-                # text = r.recognize_google(audio_data, language="ru-RU")
+        # Выбираем текст и язык в зависимости от направления перевода
+        if state["translation_direction"] == "ru_to_it":
+            text = example["итальянский"]
+            lang = "it"
+        else:
+            text = example["русский"]
+            lang = "ru"
+        
+        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
+            tts = gTTS(text=text, lang=lang, slow=False)
+            tts.save(temp_audio.name)
+            
+            with open(temp_audio.name, 'rb') as audio:
+                sent_message = bot.send_voice(message.chat.id, audio)
+            
+            # Просто добавляем новые ID сообщений, не удаляя старые
+            message_ids = state.get("message_ids", [])
+            message_ids.extend([message.message_id, sent_message.message_id])
+            state["message_ids"] = message_ids
+            user_states[user_id] = state
+            
+        os.unlink(temp_audio.name)
 
-        # # Передаем распознанный текст в обработчик ответов
-        # message.text = text
-        # handle_answer(message)
-
-        # # Очищаем временные файлы
-        # os.unlink(temp_ogg_path)
-        # os.unlink(temp_wav_path)
-
-    # except sr.UnknownValueError:
-        # bot.reply_to(message, "🎤 Не удалось распознать речь. Попробуйте ещё раз.")
-    # except sr.RequestError as e:
-        # bot.reply_to(message, "🎤 Ошибка сервиса распознавания речи. Попробуйте позже.")
-    # except Exception as e:
-        # logger.error(f"Error processing voice message: {e}")
-        # bot.reply_to(message, "🎤 Произошла ошибка при обработке голосового сообщения.")
-
+    except Exception as e:
+        logger.error(f"Error playing phrase: {e}")
+        sent_message = bot.reply_to(
+            message, 
+            "❌ Ошибка при воспроизведении фразы",
+            reply_markup=get_next_keyboard()
+        )
+        state["message_ids"].append(sent_message.message_id)
+        
+        
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
     """Обработка голосовых сообщений"""
@@ -329,6 +322,9 @@ def handle_voice(message):
         state = user_states.get(user_id, {})
         if not state.get("awaiting_answer"):
             return
+
+        # Добавляем ID голосового сообщения в список для удаления
+        state["message_ids"].append(message.message_id)
 
         file_info = bot.get_file(message.voice.file_id)
         file_path = file_info.file_path
@@ -367,79 +363,99 @@ def handle_voice(message):
 
     except sr.UnknownValueError:
         lang_text = "итальянском" if state["translation_direction"] == "ru_to_it" else "русском"
-        bot.reply_to(
+        sent_message = bot.reply_to(
             message, 
             f"🎤 Не удалось распознать речь на {lang_text} языке. "
             "Попробуйте говорить чётче и медленнее.",
             reply_markup=get_exercise_keyboard()
         )
+        # Сохраняем ID сообщения об ошибке
+        state["message_ids"].append(sent_message.message_id)
+        
     except sr.RequestError as e:
-        bot.reply_to(
+        sent_message = bot.reply_to(
             message, 
             "🎤 Ошибка сервиса распознавания. Попробуйте ответить текстом.",
             reply_markup=get_exercise_keyboard()
         )
+        # Сохраняем ID сообщения об ошибке
+        state["message_ids"].append(sent_message.message_id)
+        
     except Exception as e:
         logger.error(f"Error processing voice: {e}")
-        bot.reply_to(
+        sent_message = bot.reply_to(
             message, 
             "🎤 Ошибка обработки голосового сообщения.",
             reply_markup=get_exercise_keyboard()
         )
+        # Сохраняем ID сообщения об ошибке
+        state["message_ids"].append(sent_message.message_id)
         
 @bot.message_handler(commands=['start'])
+# @maintenance_aware
+@bot.message_handler(func=lambda message: message.text == "🔄 Перезапустить бота")  # Изменено здесь
 def send_welcome(message):
-   user_id = message.from_user.id
-   user_data = load_user_data(user_id)
-   user_states[user_id] = {
-       "translation_direction": "ru_to_it",
-       "awaiting_answer": False,
-       "message_ids": [],
-       "last_question_id": None
-   }
-   
-   welcome_text = (
-       "*Привет! *\n"
-       "Я бот для изучения итальянского языка.\n\n"
-       f"📚 Активных слов: {len(user_data['active_words'])}\n"
-       f"✅ Изучено слов: {len(user_data['learned_words'])}\n\n"
-       "🔹 *'Начать повторение'* - для изучения слов\n"
-       "🔹 *'Сменить направление'* - выбор направления перевода\n"
-       "🔹 *'Статистика'* - для просмотра прогресса\n\n"
-       "Начнём? 😊"
-   )
-   sent_message = bot.reply_to(message, welcome_text, parse_mode='Markdown', reply_markup=get_main_keyboard())
-   user_states[user_id]["message_ids"] = [sent_message.message_id, message.message_id]
+    user_id = message.from_user.id
+    user_data = load_user_data(user_id)
+    user_states[user_id] = {
+        "translation_direction": "ru_to_it",
+        "awaiting_answer": False,
+        "message_ids": [],
+        "last_question_id": None
+    }
+    
+    welcome_text = (
+        "*Привет! *\n"
+        "Я бот для изучения итальянского языка.\n\n"
+        f"📚 Активных слов: {len(user_data['active_words'])}\n"
+        f"✅ Изучено слов: {len(user_data['learned_words'])}\n\n"
+        "🔹 *'Начать повторение'* - для изучения слов\n"
+        "🔹 *'Сменить направление'* - выбор направления перевода\n"
+        "🔹 *'Статистика'* - для просмотра прогресса\n\n"
+        "Начнём? 😊"
+    )
+    sent_message = bot.reply_to(message, welcome_text, parse_mode='Markdown', reply_markup=get_main_keyboard())
+    
+    # Сохраняем ID сообщений
+    state = user_states.get(user_id, {})
+    state["message_ids"] = [sent_message.message_id, message.message_id]
+    user_states[user_id] = state
+
 
 @bot.message_handler(func=lambda message: message.text in ["🎯 Начать повторение", "/review"])
+# @maintenance_aware
 def start_review(message):
-   user_id = message.from_user.id
-   user_data = load_user_data(user_id)
-   words_to_review = get_words_for_review(user_data)
-   
-   if not words_to_review:
-       sent_message = bot.reply_to(message, "Нет слов для повторения", reply_markup=get_main_keyboard())
-       user_states[user_id] = {
-           "translation_direction": "ru_to_it",
-           "awaiting_answer": False,
-           "message_ids": [sent_message.message_id, message.message_id],
-           "last_question_id": None
-       }
-       return
+    user_id = message.from_user.id
+    user_data = load_user_data(user_id)
+    words_to_review = get_words_for_review(user_data)
+    
+    if not words_to_review:
+        sent_message = bot.reply_to(
+    message, 
+    "📝 Сейчас нет слов для повторения.\nМы напомним Вам, когда подойдёт время по графику интервального повторения.", 
+    reply_markup=get_main_keyboard()
+)
+        user_states[user_id] = {
+            "translation_direction": "ru_to_it",
+            "awaiting_answer": False,
+            "message_ids": [sent_message.message_id, message.message_id],
+            "last_question_id": None
+        }
+        return
+    user_data["current_session"] = words_to_review
+    user_data["current_word_index"] = 0
+    save_user_data(user_id, user_data)
+    
+    user_states[user_id] = {
+        "translation_direction": "ru_to_it",
+        "awaiting_answer": True,
+        "message_ids": [message.message_id],
+        "last_question_id": None
+    }
+    
+    show_current_exercise(message.chat.id, user_id)
 
-   user_data["current_session"] = words_to_review
-   user_data["current_word_index"] = 0
-   save_user_data(user_id, user_data)
-   
-   user_states[user_id] = {
-       "translation_direction": "ru_to_it",
-       "awaiting_answer": True,
-       "message_ids": [message.message_id],
-       "last_question_id": None
-   }
-   
-   show_current_exercise(message.chat.id, user_id)
-   
+
 
 def show_current_exercise(chat_id: int, user_id: int):
     logger.debug(f"Showing exercise for user {user_id}")
@@ -522,8 +538,7 @@ def show_current_exercise(chat_id: int, user_id: int):
             "retry_message_id": None
         }
         
-        
-    
+          
 @bot.message_handler(func=lambda message: message.text == "⏩ Пропустить")
 def skip_word(message):
     logger.debug("Skip word requested")
@@ -548,24 +563,65 @@ def skip_word(message):
     
 @bot.message_handler(func=lambda message: message.text == "📊 Статистика")
 def show_statistics(message):
-   user_id = message.from_user.id
-   user_data = load_user_data(user_id)
-   
-   active_words = user_data["active_words"]
-   new_words = sum(1 for w in active_words if w["correct_answers"] == 0)
-   learning_words = sum(1 for w in active_words if 0 < w["correct_answers"] < CORRECT_FOR_LEARNED)
-   learned_words = len(user_data["learned_words"])
-   
-   stats_text = [
-       "📊 *Статистика обучения:*\n",
-       f"📚 Активные слова: {len(active_words)}",
-       f"🆕 Новые слова (0 ответов): {new_words}",
-       f"📝 В процессе (1-7 ответов): {learning_words}",
-       f"✅ Изучено (8+ ответов): {learned_words}\n",
-       f"Всего слов в словаре: {len(VOCABULARY['Буду изучать'])}"
-   ]
-   
-   bot.reply_to(message, "\n".join(stats_text), parse_mode='Markdown', reply_markup=get_main_keyboard())
+    user_id = message.from_user.id
+    user_data = load_user_data(user_id)
+    current_time = get_now()
+    
+    # Статистика по словам
+    active_words = user_data["active_words"]
+    new_words = sum(1 for w in active_words if w["correct_answers"] == 0)
+    learning_words = sum(1 for w in active_words if 0 < w["correct_answers"] < CORRECT_FOR_LEARNED)
+    learned_words = len(user_data["learned_words"])
+    
+    # Слова для повторения
+    words_to_review = []
+    upcoming = []
+    for word in active_words:
+        review_time = parse_time(word["next_review"])
+        if review_time <= current_time:
+            words_to_review.append(word)
+        else:
+            time_diff = review_time - current_time
+            hours = int(time_diff.total_seconds() // 3600)
+            upcoming.append((word, hours))
+    
+    stats_text = [
+        "📊 *Общая статистика:*\n",
+        f"📚 Активные слова: {len(active_words)}",
+        f"🆕 Новые слова (0 ответов): {new_words}",
+        f"📝 В процессе (1-7 ответов): {learning_words}",
+        f"✅ Изучено (8+ ответов): {learned_words}",
+        f"\nВсего слов в словаре: {len(VOCABULARY['Буду изучать'])}\n"
+    ]
+    
+    # Добавляем информацию о словах для повторения
+    if words_to_review:
+        stats_text.append("\n🔔 *Готово к повторению:*")
+        for word in words_to_review:
+            stats_text.append(f"• {word['word']} - {word['translation']}")
+    else:
+        stats_text.append("\n✅ Нет слов для повторения прямо сейчас")
+    
+    if upcoming:
+        stats_text.append("\n⏰ *Предстоящие повторения:*")
+        upcoming.sort(key=lambda x: x[1])
+        for word, hours in upcoming:
+            if hours < 24:
+                stats_text.append(f"• {word['word']} - через {hours}ч")
+            else:
+                days = hours // 24
+                remaining_hours = hours % 24
+                stats_text.append(f"• {word['word']} - через {days}д {remaining_hours}ч")
+    
+    sent_message = bot.reply_to(message, "\n".join(stats_text), 
+                               parse_mode='Markdown', 
+                               reply_markup=get_main_keyboard())
+    
+    # Сохраняем ID сообщения для последующего удаления
+    state = user_states.get(user_id, {})
+    state["message_ids"] = [sent_message.message_id, message.message_id]
+    user_states[user_id] = state
+    
 
 @bot.message_handler(func=lambda message: message.text == "🔄 Сменить направление")
 def switch_translation_direction(message):
@@ -595,21 +651,23 @@ def show_help(message):
         "🎯 *Начать повторение* - изучение слов",
         "🔄 *Сменить направление* - изменить направление перевода",
         "📊 *Статистика* - прогресс обучения\n",
-        "*Дополнительные команды:*",
-        "`/start` - перезапуск бота",
-        "`/status` - проверка статуса слов",
-        "`/reset` - сброс прогресса\n",
         "*Во время занятия:*",
         "🎤 Вы можете отвечать голосовыми сообщениями",
         "💡 Подсказка - показать первые буквы",
         "⏩ Пропустить - пропустить слово",
         "🏁 Завершить занятие - закончить сессию"
     ]
-    bot.reply_to(message, "\n".join(help_text), parse_mode='Markdown', reply_markup=get_main_keyboard())
+    sent_message = bot.reply_to(message, "\n".join(help_text), 
+                               parse_mode='Markdown', 
+                               reply_markup=get_main_keyboard())
+    
+    # Сохраняем ID сообщений
+    state = user_states.get(user_id, {})
+    state["message_ids"] = [sent_message.message_id, message.message_id]
+    user_states[user_id] = state
 
 @bot.message_handler(func=lambda message: message.text == "💡 Подсказка")
 def show_hint(message):
-    """Показ подсказки"""
     user_id = message.from_user.id
     state = user_states.get(user_id, {})
     
@@ -620,56 +678,31 @@ def show_hint(message):
     answer = example["итальянский"] if state["translation_direction"] == "ru_to_it" else example["русский"]
     hint = ' '.join(word[0] + '_' * (len(word)-1) for word in answer.split())
     
-    # Сохраняем ID сообщения с запросом подсказки
+    sent_message = bot.reply_to(message, f"💡 Подсказка:\n{hint}", 
+                               reply_markup=get_exercise_keyboard())
+    
+    # Добавляем ID сообщений к существующим
     message_ids = state.get("message_ids", [])
-    message_ids.append(message.message_id)
-    
-    sent_message = bot.reply_to(
-        message, 
-        f"💡 Подсказка:\n{hint}", 
-        reply_markup=get_exercise_keyboard()
-    )
-    
-    # Добавляем ID сообщения с подсказкой
-    message_ids.append(sent_message.message_id)
-    
-    # Обновляем состояние
-    user_states[user_id].update({
-        "message_ids": message_ids
-    })
+    message_ids.extend([message.message_id, sent_message.message_id])
+    state["message_ids"] = message_ids
+    user_states[user_id] = state
 
 @bot.message_handler(func=lambda message: message.text == "🏁 Завершить занятие")
 def end_session(message):
-   user_id = message.from_user.id
-   user_data = load_user_data(user_id)
-   user_data["current_session"] = []
-   user_data["current_word_index"] = 0
-   save_user_data(user_id, user_data)
-   
-   bot.reply_to(message, "Занятие завершено!", reply_markup=get_main_keyboard())
+    user_id = message.from_user.id
+    user_data = load_user_data(user_id)
+    user_data["current_session"] = []
+    user_data["current_word_index"] = 0
+    save_user_data(user_id, user_data)
+    
+    sent_message = bot.reply_to(message, "Занятие завершено!", 
+                               reply_markup=get_main_keyboard())
+    
+    # Сохраняем ID сообщений
+    state = user_states.get(user_id, {})
+    state["message_ids"] = [sent_message.message_id, message.message_id]
+    user_states[user_id] = state
 
-# @bot.message_handler(commands=['status'])
-# def check_status(message):
-    # user_id = message.from_user.id
-    # user_data = load_user_data(user_id)
-    # current_time = get_now()
-    
-    # status_text = ["📊 *Текущий статус:*\n"]
-    # words_to_review = []
-    
-    # for word in user_data["active_words"]:
-        # review_time = parse_time(word["next_review"])
-        # if review_time <= current_time:
-            # words_to_review.append(word)
-    
-    # if words_to_review:
-        # status_text.append("🔔 *Слова для повторения:*")
-        # for word in words_to_review:
-            # status_text.append(f"• {word['word']} - {word['translation']}")
-    # else:
-        # status_text.append("🔕 Нет слов для повторения")
-        
-    # bot.reply_to(message, "\n".join(status_text), parse_mode='Markdown')
 
 @bot.message_handler(commands=['status'])
 def check_status(message):
@@ -726,22 +759,15 @@ def next_exercise(message):
     logger.debug(f"Next exercise requested by user {user_id}")
     
     try:
+        # Удаляем все предыдущие сообщения
         state = user_states.get(user_id, {})
         message_ids = state.get("message_ids", []) + [message.message_id]
         
-        # Удаляем все предыдущие сообщения включая сообщение с кнопкой "Повторить"
         for msg_id in message_ids:
             try:
                 bot.delete_message(message.chat.id, msg_id)
             except Exception as e:
                 logger.debug(f"Could not delete message {msg_id}: {e}")
-                
-        # Удаляем сообщение с кнопкой "Повторить" если оно есть
-        if state.get("retry_message_id"):
-            try:
-                bot.delete_message(message.chat.id, state["retry_message_id"])
-            except Exception as e:
-                logger.debug(f"Could not delete retry message: {e}")
 
         user_data = load_user_data(user_id)
         if not user_data.get("current_session"):
@@ -755,7 +781,7 @@ def next_exercise(message):
                 "awaiting_answer": False,
                 "message_ids": [sent_message.message_id],
                 "last_question_id": None,
-                "retry_message_id": None
+                "current_example": None
             }
             return
             
@@ -767,7 +793,7 @@ def next_exercise(message):
             
             sent_message = bot.send_message(
                 message.chat.id,
-                "✅ Все задания выполнены!\nНачните новое занятие, когда будете готовы.",
+                "✅ Все задания выполнены!\nСледующие слова будут доступны, когда подойдёт время их повторения.",
                 reply_markup=get_main_keyboard()
             )
             user_states[user_id] = {
@@ -775,17 +801,16 @@ def next_exercise(message):
                 "awaiting_answer": False,
                 "message_ids": [sent_message.message_id],
                 "last_question_id": None,
-                "retry_message_id": None
+                "current_example": None
             }
             return
         
         user_data["current_word_index"] = current_index + 1
         save_user_data(user_id, user_data)
-        
         show_current_exercise(message.chat.id, user_id)
         
     except Exception as e:
-        logger.error(f"Error in next_exercise: {e}")
+        logger.error(f"Error in next_exercise: {e}", exc_info=True)
         sent_message = bot.send_message(
             message.chat.id,
             "❌ Произошла ошибка. Попробуйте начать заново.",
@@ -796,11 +821,10 @@ def next_exercise(message):
             "awaiting_answer": False,
             "message_ids": [sent_message.message_id],
             "last_question_id": None,
-            "retry_message_id": None
+            "current_example": None
         }
         
-        
-        
+               
 @bot.message_handler(commands=['reset'])
 def handle_reset(message):
     """Обработка команды /reset"""
@@ -901,12 +925,16 @@ def retry_answer(message):
             "last_question_id": None,
             "retry_message_id": None
         }
-        
 @bot.message_handler(func=lambda message: True)
 def handle_answer(message):
-    """Обработка ответов пользователя"""
     user_id = message.from_user.id
     state = user_states.get(user_id, {})
+    
+    # Проверяем, не является ли сообщение командой смены направления
+    if message.text == "🔀 Сменить направление":
+        switch_translation_direction(message)
+        return
+        
     if not state.get("awaiting_answer"):
         return
 
@@ -1016,8 +1044,7 @@ def handle_answer(message):
                 "awaiting_answer": False,
                 "message_ids": [sent_message.message_id],
                 "last_question_id": None,
-                "current_example": None,
-                "retry_message_id": None
+                "current_example": example  # Сохраняем пример для прослушивания
             }
         else:
             response = [
@@ -1060,34 +1087,47 @@ def handle_answer(message):
         }
         
  
-
-
 def check_notifications():
-   while True:
-       try:
-           current_time = get_now()
-           for filename in os.listdir('user_data'):
-               try:
-                   user_id = int(filename.split('_')[1].split('.')[0])
-                   user_data = load_user_data(user_id)
-                   words_to_review = [
-                       word for word in user_data["active_words"]
-                       if parse_time(word["next_review"]) <= current_time
-                   ]
-                   
-                   if words_to_review:
-                       text = (
-                           "🔔 Пора повторить слова!\n\n"
-                           f"Готово к повторению: {len(words_to_review)} слов\n\n"
-                       )
-                       text += "\n".join(f"• {w['word']} - {w['translation']}" 
-                                       for w in words_to_review[:3])
-                       bot.send_message(user_id, text, reply_markup=get_main_keyboard())
-               except Exception as e:
-                   logger.error(f"Notification error for user {filename}: {e}")
-       except Exception as e:
-           logger.error(f"Notification check error: {e}")
-       time.sleep(600)
+    while True:
+        try:
+            current_time = get_now()
+            for filename in os.listdir('user_data'):
+                try:
+                    user_id = int(filename.split('_')[1].split('.')[0])
+                    user_data = load_user_data(user_id)
+                    state = user_states.get(user_id, {})
+                    
+                    # Если есть предыдущие уведомления, удаляем их
+                    notification_ids = state.get("notification_ids", [])
+                    for msg_id in notification_ids:
+                        try:
+                            bot.delete_message(user_id, msg_id)
+                        except:
+                            pass
+                            
+                    words_to_review = [
+                        word for word in user_data["active_words"]
+                        if parse_time(word["next_review"]) <= current_time
+                    ]
+                    
+                    if words_to_review:
+                        text = (
+                            "🔔 Пора повторить слова!\n\n"
+                            f"Готово к повторению: {len(words_to_review)} слов\n\n"
+                        )
+                        text += "\n".join(f"• {w['word']} - {w['translation']}" 
+                                        for w in words_to_review[:3])
+                        sent_message = bot.send_message(user_id, text, reply_markup=get_main_keyboard())
+                        
+                        # Сохраняем ID нового уведомления
+                        state["notification_ids"] = [sent_message.message_id]
+                        user_states[user_id] = state
+                        
+                except Exception as e:
+                    logger.error(f"Notification error for user {filename}: {e}")
+        except Exception as e:
+            logger.error(f"Notification check error: {e}")
+        time.sleep(600)
        
 def send_initial_message():
     """Отправка приветственного сообщения при запуске"""
