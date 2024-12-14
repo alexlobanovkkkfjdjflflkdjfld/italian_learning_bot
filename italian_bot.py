@@ -715,10 +715,10 @@ def show_statistics(message):
 def switch_translation_direction(message):
     logger.debug("Direction switch requested")
     user_id = message.from_user.id
-    state = user_states.get(user_id, {"translation_direction": "ru_to_en"})
-    new_direction = "en_to_ru" if state.get("translation_direction") == "ru_to_en" else "ru_to_en"
+    state = user_states.get(user_id, {"translation_direction": "ru_to_it"})
+    new_direction = "it_to_ru" if state.get("translation_direction") == "ru_to_it" else "ru_to_it"
     
-    direction_text = "английский → русский" if new_direction == "en_to_ru" else "русский → английский"
+    direction_text = "итальянский → русский" if new_direction == "it_to_ru" else "русский → итальянский"
     sent_message = bot.reply_to(message, f"🔄 Направление перевода изменено на:\n*{direction_text}*", 
                 parse_mode='Markdown')
     
