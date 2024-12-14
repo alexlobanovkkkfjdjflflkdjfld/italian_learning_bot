@@ -18,7 +18,16 @@ import tempfile
 import shutil  # Добавлено для работы с файлами
 from gtts import gTTS
 import asyncio
+from pydub.utils import mediainfo
+import platform
+import subprocess
 
+# Устанавливаем путь к ffmpeg для pydub
+# Настраиваем пути для pydub
+
+AudioSegment.converter = "/usr/bin/ffmpeg"
+AudioSegment.ffmpeg = "/usr/bin/ffmpeg"
+AudioSegment.ffprobe = "/usr/bin/ffprobe"  # Точный путь, который мы нашли
 
 # Базовые настройки логирования
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -179,35 +188,50 @@ def update_word_progress(word: dict, is_correct: bool) -> dict:
     
 def get_main_keyboard():
    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-   markup.row(types.KeyboardButton("🎯 Начать повторение"))
-   markup.row(types.KeyboardButton("🔀 Сменить направление перевода"),  # Новый значок
+   markup.row(types.KeyboardButton("🎯 Начать повторение"),
+              types.KeyboardButton("🏆 Рейтинг"))
+   markup.row(types.KeyboardButton("🔀 Сменить направление перевода"), 
               types.KeyboardButton("📊 Статистика"))
-   markup.row(types.KeyboardButton("♻️ Перезапустить бота"),  # Новый значок
-              types.KeyboardButton("ℹ️ Помощь"))
+   markup.row(types.KeyboardButton("♻️ Перезапустить бота"), types.KeyboardButton("ℹ️ Помощь"))
    return markup
 
-def get_exercise_keyboard() -> types.ReplyKeyboardMarkup:
-    """Создание клавиатуры для упражнения"""
+def get_exercise_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(types.KeyboardButton("💡 Подсказка"), 
-               types.KeyboardButton("🎤 Голосовой ответ"))
-    markup.row(types.KeyboardButton("🔀 Сменить направление"),  # Тот же значок что и в главном меню
-               types.KeyboardButton("⏩ Пропустить"))
-    markup.row(types.KeyboardButton("🏁 Завершить занятие"))
+    markup.row(
+        types.KeyboardButton("💡 Подсказка"),
+        types.KeyboardButton("🎤 Голосовой ответ")
+    )
+    markup.row(
+        types.KeyboardButton("🔀 Сменить направление"),
+        types.KeyboardButton("⏩ Пропустить")
+    )
+    markup.row(
+        types.KeyboardButton("🏁 Завершить занятие")
+    )
     return markup
 
 def get_next_keyboard():
-   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-   markup.row(types.KeyboardButton("➡️ Далее"), types.KeyboardButton("🔊 Прослушать"))
-   markup.row(types.KeyboardButton("🏁 Завершить занятие"))
-   return markup
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(
+        types.KeyboardButton("➡️ Далее"),
+        types.KeyboardButton("🔊 Прослушать")
+    )
+    markup.row(
+        types.KeyboardButton("🏁 Завершить занятие")
+    )
+    return markup
 
 def get_retry_keyboard():
-   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-   markup.row(types.KeyboardButton("🔄 Повторить"))
-   markup.row(types.KeyboardButton("💡 Подсказка"), types.KeyboardButton("➡️ Далее"))
-   markup.row(types.KeyboardButton("🏁 Завершить занятие"))
-   return markup
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(
+        types.KeyboardButton("🔄 Повторить"),
+        types.KeyboardButton("💡 Подсказка")
+    )
+    markup.row(
+        types.KeyboardButton("➡️ Далее"),
+        types.KeyboardButton("🏁 Завершить занятие")
+    )
+    return markup
 
 def normalize_text(text: str) -> str:
    text = text.lower().strip()
@@ -271,6 +295,70 @@ def voice_answer_prompt(message):
     state["message_ids"] = message_ids
     user_states[user_id] = state
     
+@bot.message_handler(func=lambda message: message.text == "🏆 Рейтинг")
+def show_rating(message):
+    try:
+        user_ratings = []
+        current_user_id = message.from_user.id
+        
+        # Собираем данные из всех файлов user_data
+        for filename in os.listdir('user_data'):
+            if filename.startswith('user_') and filename.endswith('.json'):
+                try:
+                    user_id = int(filename.split('_')[1].split('.')[0])
+                    with open(os.path.join('user_data', filename), 'r', encoding='utf-8') as f:
+                        user_data = json.load(f)
+                        
+                        user_ratings.append({
+                            'user_id': user_id,
+                            'active_words': len(user_data.get('active_words', [])),
+                            'learned_words': len(user_data.get('learned_words', [])),
+                            'total_words': len(user_data.get('active_words', [])) + len(user_data.get('learned_words', [])),
+                            'is_current': user_id == current_user_id
+                        })
+                except Exception as e:
+                    logger.error(f"Error processing user file {filename}: {e}")
+                    continue
+        
+        # Сортируем по общему количеству слов
+        user_ratings.sort(key=lambda x: x['total_words'], reverse=True)
+        
+        # Формируем сообщение
+        rating_text = ["🏆 *Рейтинг учеников:*\n"]
+        
+        for i, user in enumerate(user_ratings, 1):
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "👤"
+            current_mark = "👉" if user['is_current'] else " "
+            
+            rating_text.append(
+                f"{current_mark}{medal} #{i}: ID{user['user_id']}\n"
+                f"   📚 Изучается: {user['active_words']}\n"
+                f"   ✅ Изучено: {user['learned_words']}\n"
+                f"   📊 Всего слов: {user['total_words']}"
+            )
+        
+        # Отправляем результат
+        sent_message = bot.reply_to(
+            message,
+            "\n\n".join(rating_text),
+            parse_mode='Markdown'
+        )
+        
+        # Сохраняем ID сообщения для последующего удаления
+        state = user_states.get(current_user_id, {})
+        state["message_ids"] = [sent_message.message_id, message.message_id]
+        user_states[current_user_id] = state
+        
+    except Exception as e:
+        logger.error(f"Error showing rating: {e}")
+        sent_message = bot.reply_to(
+            message,
+            "❌ Произошла ошибка при формировании рейтинга"
+        )
+        # Сохраняем ID сообщения об ошибке
+        state = user_states.get(current_user_id, {})
+        state["message_ids"] = [sent_message.message_id, message.message_id]
+        user_states[current_user_id] = state
         
 @bot.message_handler(func=lambda message: message.text == "🔊 Прослушать")
 def play_phrase(message):
@@ -312,8 +400,8 @@ def play_phrase(message):
             reply_markup=get_next_keyboard()
         )
         state["message_ids"].append(sent_message.message_id)
-        
-        
+     
+     
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
     """Обработка голосовых сообщений"""
@@ -391,9 +479,9 @@ def handle_voice(message):
         # Сохраняем ID сообщения об ошибке
         state["message_ids"].append(sent_message.message_id)
         
+
 @bot.message_handler(commands=['start'])
-# @maintenance_aware
-@bot.message_handler(func=lambda message: message.text == "🔄 Перезапустить бота")  # Изменено здесь
+@bot.message_handler(func=lambda message: message.text == "♻️ Перезапустить бота")  # У вас сейчас 🔄, а в кнопке ♻️
 def send_welcome(message):
     user_id = message.from_user.id
     user_data = load_user_data(user_id)
@@ -623,26 +711,31 @@ def show_statistics(message):
     user_states[user_id] = state
     
 
-@bot.message_handler(func=lambda message: message.text == "🔄 Сменить направление")
+@bot.message_handler(func=lambda message: message.text == "🔀 Сменить направление")
 def switch_translation_direction(message):
     logger.debug("Direction switch requested")
     user_id = message.from_user.id
-    state = user_states.get(user_id, {"translation_direction": "ru_to_it"})
-    new_direction = "it_to_ru" if state.get("translation_direction") == "ru_to_it" else "ru_to_it"
+    state = user_states.get(user_id, {"translation_direction": "ru_to_en"})
+    new_direction = "en_to_ru" if state.get("translation_direction") == "ru_to_en" else "ru_to_en"
+    
+    direction_text = "английский → русский" if new_direction == "en_to_ru" else "русский → английский"
+    sent_message = bot.reply_to(message, f"🔄 Направление перевода изменено на:\n*{direction_text}*", 
+                parse_mode='Markdown')
+    
+    # Сохраняем ID сообщений для последующего удаления
+    message_ids = state.get("message_ids", [])
+    message_ids.extend([message.message_id, sent_message.message_id])
     
     user_states[user_id] = {
         "translation_direction": new_direction,
-        "awaiting_answer": state.get("awaiting_answer", False),
+        "awaiting_answer": state.get("awaiting_answer", True),
         "current_example": state.get("current_example"),
-        "last_question_id": state.get("last_question_id")
-        }
+        "last_question_id": state.get("last_question_id"),
+        "message_ids": message_ids  # Сохраняем обновленный список ID
+    }
     
-    direction_text = "итальянский → русский" if new_direction == "it_to_ru" else "русский → итальянский"
-    bot.reply_to(message, f"🔄 Направление перевода изменено на:\n*{direction_text}*", 
-                parse_mode='Markdown')
-    
-    if state.get("awaiting_answer"):
-        show_current_exercise(message.chat.id, user_id)
+    # Показываем новое задание
+    show_current_exercise(message.chat.id, user_id)
 
 @bot.message_handler(func=lambda message: message.text == "ℹ️ Помощь")
 def show_help(message):
@@ -1042,7 +1135,8 @@ def handle_answer(message):
             user_states[user_id] = {
                 "translation_direction": state["translation_direction"],
                 "awaiting_answer": False,
-                "message_ids": [sent_message.message_id],
+                # "message_ids": [sent_message.message_id],
+                "message_ids": [],
                 "last_question_id": None,
                 "current_example": example  # Сохраняем пример для прослушивания
             }
@@ -1095,22 +1189,30 @@ def check_notifications():
                 try:
                     user_id = int(filename.split('_')[1].split('.')[0])
                     user_data = load_user_data(user_id)
-                    state = user_states.get(user_id, {})
                     
-                    # Если есть предыдущие уведомления, удаляем их
-                    notification_ids = state.get("notification_ids", [])
-                    for msg_id in notification_ids:
-                        try:
-                            bot.delete_message(user_id, msg_id)
-                        except:
-                            pass
-                            
+                    # Проверяем время последнего взаимодействия
+                    last_activity = parse_time(user_data.get("last_update", ""))
+                    inactive_time = (current_time - last_activity).total_seconds() / 3600  # в часах
+                    
+                    # Если пользователь был активен в последние 2 часа, пропускаем напоминание
+                    if inactive_time < 2:
+                        continue
+                    
                     words_to_review = [
                         word for word in user_data["active_words"]
                         if parse_time(word["next_review"]) <= current_time
                     ]
                     
                     if words_to_review:
+                        # Удаляем предыдущие напоминания
+                        state = user_states.get(user_id, {})
+                        notification_ids = state.get("notification_ids", [])
+                        for msg_id in notification_ids:
+                            try:
+                                bot.delete_message(user_id, msg_id)
+                            except:
+                                pass
+                                
                         text = (
                             "🔔 Пора повторить слова!\n\n"
                             f"Готово к повторению: {len(words_to_review)} слов\n\n"
@@ -1119,7 +1221,7 @@ def check_notifications():
                                         for w in words_to_review[:3])
                         sent_message = bot.send_message(user_id, text, reply_markup=get_main_keyboard())
                         
-                        # Сохраняем ID нового уведомления
+                        # Сохраняем ID нового напоминания
                         state["notification_ids"] = [sent_message.message_id]
                         user_states[user_id] = state
                         
